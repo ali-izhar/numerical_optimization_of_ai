@@ -38,7 +38,7 @@ from matplotlib.figure import Figure
 from matplotlib import patheffects
 import matplotlib.pyplot as plt
 
-from .optimization import METHOD_MAP, run_optimization
+from .methods import METHOD_MAP, run_optimization
 from .components import FunctionInput, MethodSelector
 from .components.surface_plot import SurfacePlot
 from .components.convergence_plot import ConvergencePlot

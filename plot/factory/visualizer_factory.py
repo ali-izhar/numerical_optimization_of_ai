@@ -111,40 +111,56 @@ class VisualizerFactory:
         if vis_config is None:
             vis_config = VisualizationConfig()
 
-        # Create function space component
+        # Choose titles based on method type
+        if method_config.method_type == MethodType.ROOT:
+            function_title = "Root Finding Visualization"
+            convergence_title = "Root Approximation Progress"
+            error_title = "Root Finding Error Reduction"
+            animation_title = "Root Finding Method Animation"
+            ylabel = "Root Approximation"
+        else:
+            function_title = "Optimization Visualization"
+            convergence_title = "Optimization Progress"
+            error_title = "Optimization Error Reduction"
+            animation_title = "Optimization Method Animation"
+            ylabel = "Parameter Value"
+
+        # Create function space component with enhanced styling
         function_space = FunctionSpace(
             func=method_config.func,
             x_range=method_config.x_range,
-            title="Function Visualization",
+            title=function_title,
             is_2d=method_config.is_2d,
+            # Set colormap based on config if available
+            colormap=(
+                vis_config.plotly_colorscales.get("surface", "Viridis")
+                if hasattr(vis_config, "plotly_colorscales")
+                and vis_config.plotly_colorscales
+                else "Viridis"
+            ),
         )
 
-        # Create convergence plot component
-        if method_config.method_type == MethodType.ROOT:
-            ylabel = "Root Approximation"
-        else:
-            ylabel = "Value"
-
+        # Create convergence plot component with enhanced styling
         convergence_plot = ConvergencePlot(
-            title="Convergence Plot",
+            title=convergence_title,
             xlabel="Iteration",
             ylabel=ylabel,
             color_palette=vis_config.palette,
         )
 
-        # Create error plot component
+        # Create error plot component with enhanced styling
         error_plot = ErrorPlot(
-            title="Error Plot",
+            title=error_title,
             xlabel="Iteration",
             ylabel="Error",
             color_palette=vis_config.palette,
             log_scale=True,
         )
 
-        # Create animation component
+        # Create animation component with enhanced styling
         animation = MethodAnimation(
             function_space=function_space,
-            title="Method Animation",
+            title=animation_title,
             color_palette=vis_config.palette,
         )
 

@@ -2,12 +2,13 @@
 
 """
 This module provides utilities for detecting and handling dimensions in
-numerical method visualizations.
+numerical method visualizations, with enhanced support for Plotly visualizations.
 """
 
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple, Dict, Any
 import inspect
 import numpy as np
+import plotly.graph_objects as go
 
 
 def detect_function_dimensions(func: Callable) -> int:
@@ -157,3 +158,138 @@ def prepare_grid_data(
                         Z[i, j] = np.nan
 
     return X, Y, Z
+
+
+def prepare_plotly_grid_data(
+    func: Callable,
+    x_range: Tuple[float, float],
+    y_range: Optional[Tuple[float, float]] = None,
+    num_points: int = 100,
+    colorscale: str = "Viridis",
+) -> Dict[str, Any]:
+    """
+    Prepare grid data specifically for Plotly 3D surface and contour visualizations.
+
+    Args:
+        func: The function to visualize
+        x_range: Range of x values (min, max)
+        y_range: Range of y values (min, max), defaults to x_range if None
+        num_points: Number of points along each dimension
+        colorscale: Plotly colorscale to use for the visualization
+
+    Returns:
+        Dictionary containing data ready for Plotly visualization
+    """
+    # Get the grid data using the existing function
+    X, Y, Z = prepare_grid_data(func, x_range, y_range, num_points)
+
+    # Prepare data in Plotly-friendly format
+    plotly_data = {
+        "x": X[0, :],  # x coordinates (first row of X)
+        "y": Y[:, 0],  # y coordinates (first column of Y)
+        "z": Z,  # z values (function values)
+        "colorscale": colorscale,
+    }
+
+    return plotly_data
+
+
+def create_plotly_surface(
+    grid_data: Dict[str, Any],
+    opacity: float = 0.9,
+    contours: bool = True,
+    lighting: bool = True,
+    colorscale: Optional[str] = None,
+) -> go.Surface:
+    """
+    Create a Plotly 3D surface from grid data.
+
+    Args:
+        grid_data: Grid data from prepare_plotly_grid_data
+        opacity: Surface opacity (0-1)
+        contours: Whether to show contour lines
+        lighting: Whether to apply 3D lighting effects
+        colorscale: Optional override for the colorscale
+
+    Returns:
+        Plotly Surface object ready for visualization
+    """
+    # Use provided or default colorscale
+    cs = colorscale if colorscale else grid_data.get("colorscale", "Viridis")
+
+    # Create surface with enhanced styling
+    surface = go.Surface(
+        x=grid_data["x"],
+        y=grid_data["y"],
+        z=grid_data["z"],
+        colorscale=cs,
+        opacity=opacity,
+        contours={
+            "x": {"show": contours, "width": 2, "color": "rgba(255,255,255,0.3)"},
+            "y": {"show": contours, "width": 2, "color": "rgba(255,255,255,0.3)"},
+            "z": {"show": contours, "width": 2, "color": "rgba(255,255,255,0.3)"},
+        },
+        lighting=(
+            {
+                "ambient": 0.6,
+                "diffuse": 0.8,
+                "fresnel": 0.2,
+                "roughness": 0.4,
+                "specular": 1.0,
+            }
+            if lighting
+            else None
+        ),
+        colorbar={"title": "f(x,y)", "thickness": 20, "len": 0.8},
+        hoverinfo="all",
+        hoverlabel={"font": {"family": "Arial", "size": 14}},
+    )
+
+    return surface
+
+
+def create_plotly_contour(
+    grid_data: Dict[str, Any],
+    colorscale: Optional[str] = None,
+    contour_lines: int = 30,
+    show_labels: bool = True,
+) -> go.Contour:
+    """
+    Create a Plotly contour plot from grid data.
+
+    Args:
+        grid_data: Grid data from prepare_plotly_grid_data
+        colorscale: Optional override for the colorscale
+        contour_lines: Number of contour lines
+        show_labels: Whether to show contour labels
+
+    Returns:
+        Plotly Contour object ready for visualization
+    """
+    # Use provided or default colorscale
+    cs = colorscale if colorscale else grid_data.get("colorscale", "Viridis")
+
+    # Create contour with enhanced styling
+    contour = go.Contour(
+        x=grid_data["x"],
+        y=grid_data["y"],
+        z=grid_data["z"],
+        colorscale=cs,
+        ncontours=contour_lines,
+        contours={
+            "coloring": "heatmap",
+            "showlabels": show_labels,
+            "labelfont": {"family": "Arial", "size": 12, "color": "white"},
+        },
+        colorbar={
+            "title": "f(x,y)",
+            "thickness": 20,
+            "len": 0.8,
+            "title_font": {"family": "Arial"},
+        },
+        line={"width": 0.5, "color": "rgba(255,255,255,0.3)"},
+        hoverinfo="all",
+        hoverlabel={"font": {"family": "Arial", "size": 14}},
+    )
+
+    return contour

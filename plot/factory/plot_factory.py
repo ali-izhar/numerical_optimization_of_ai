@@ -229,9 +229,9 @@ class PlotFactory:
         method_colors: Optional[Dict[str, str]] = None,
         include_error_plot: bool = True,
         log_scale_error: bool = True,
-        height: int = 800,
-        width: int = 1200,
-        surface_plot: bool = False,
+        height: int = None,
+        width: int = None,
+        surface_plot: bool = None,
     ) -> go.Figure:
         """
         Create an interactive plotly comparison of numerical methods.
@@ -243,9 +243,9 @@ class PlotFactory:
             method_colors: Dictionary mapping method names to colors
             include_error_plot: Whether to include error plot
             log_scale_error: Whether to use log scale for error plot
-            height: Figure height
-            width: Figure width
-            surface_plot: Whether to use 3D surface plot for 2D functions
+            height: Figure height (None for auto-sizing)
+            width: Figure width (None for auto-sizing)
+            surface_plot: Whether to use 3D surface plot for 2D functions (None to use vis_config setting)
 
         Returns:
             go.Figure: Plotly figure object
@@ -261,16 +261,35 @@ class PlotFactory:
                 xref="paper",
                 yref="paper",
                 showarrow=False,
-                font=dict(size=18),
+                font=dict(size=24, color="#333333", family="Arial, sans-serif"),
             )
             fig.update_layout(
-                title="Comparison Plot (No Data)", height=height, width=width
+                title={
+                    "text": "<b>Comparison Plot (No Data)</b>",
+                    "font": {"size": 28, "color": "#333333"},
+                    "y": 0.95,
+                    "x": 0.5,
+                    "xanchor": "center",
+                    "yanchor": "top",
+                },
+                height=height,
+                width=width,
+                autosize=True,
+                template="plotly_white",
+                paper_bgcolor="rgba(255, 255, 255, 0.95)",
             )
             return fig
 
         # Create default visualization config if not provided
         if vis_config is None:
             vis_config = VisualizationConfig()
+
+        # Use config value for surface_plot if not explicitly specified
+        if surface_plot is None and hasattr(vis_config, "use_plotly_3d"):
+            surface_plot = vis_config.use_plotly_3d
+
+        # Ensure surface_plot is a boolean
+        surface_plot = bool(surface_plot)
 
         # Update method colors
         method_names = [method.name for method in methods]
@@ -301,60 +320,136 @@ class PlotFactory:
             if method.has_converged():
                 critical_points.append(method.get_current_x())
 
-        # Create subplots
+        # Create subplots with explicit types to avoid NoneType errors
         if include_error_plot:
-            specs = [[{}, {}], [{}, {}]]
+            # 2x2 grid for function, convergence, error, and summary
             if surface_plot and function_space.is_2d:
-                specs[0][0] = {"type": "scene"}
+                # Use scene type for 3D surface plot
+                specs = [
+                    [{"type": "scene"}, {"type": "xy"}],
+                    [{"type": "xy"}, {"type": "xy"}],
+                ]
+            else:
+                # Use xy type for 2D plots
+                specs = [
+                    [{"type": "xy"}, {"type": "xy"}],
+                    [{"type": "xy"}, {"type": "xy"}],
+                ]
 
             fig = make_subplots(
                 rows=2,
                 cols=2,
                 subplot_titles=[
-                    "Function Space",
-                    "Convergence Plot",
-                    "Error Plot",
-                    "Summary",
+                    f"<b>{function_space.title}</b>",
+                    "<b>Convergence Progress</b>",
+                    "<b>Error Reduction</b>",
+                    "<b>Method Performance Summary</b>",
                 ],
                 specs=specs,
                 column_widths=[0.6, 0.4],
                 row_heights=[0.6, 0.4],
+                horizontal_spacing=0.08,
+                vertical_spacing=0.12,
             )
         else:
-            specs = [[{}], [{}]]
+            # 2x1 grid for function and convergence
             if surface_plot and function_space.is_2d:
-                specs[0][0] = {"type": "scene"}
+                # Use scene type for 3D surface plot
+                specs = [[{"type": "scene"}], [{"type": "xy"}]]
+            else:
+                # Use xy type for 2D plots
+                specs = [[{"type": "xy"}], [{"type": "xy"}]]
 
             fig = make_subplots(
                 rows=2,
                 cols=1,
-                subplot_titles=["Function Space", "Convergence Plot"],
+                subplot_titles=[
+                    f"<b>{function_space.title}</b>",
+                    "<b>Convergence Progress</b>",
+                ],
                 specs=specs,
                 row_heights=[0.7, 0.3],
+                vertical_spacing=0.12,
             )
 
         # Add function space
-        function_plot = function_space.create_plotly_figure(
-            critical_points=critical_points,
-            plot_type="surface" if surface_plot and function_space.is_2d else "contour",
-        )
+        plot_type = "surface" if surface_plot and function_space.is_2d else "contour"
 
-        # Add all traces from function plot to the main figure
-        for trace in function_plot.data:
-            fig.add_trace(trace, row=1, col=1)
+        # Use colorscale from config if available
+        colorscale = None
+        if hasattr(vis_config, "plotly_colorscales"):
+            if plot_type == "surface" and "surface" in vis_config.plotly_colorscales:
+                colorscale = vis_config.plotly_colorscales["surface"]
+            elif plot_type == "contour" and "contour" in vis_config.plotly_colorscales:
+                colorscale = vis_config.plotly_colorscales["contour"]
+
+        try:
+            function_plot = function_space.create_plotly_figure(
+                critical_points=critical_points,
+                plot_type=plot_type,
+                colorscale=colorscale,
+            )
+
+            # Add all traces from function plot to the main figure
+            for trace in function_plot.data:
+                fig.add_trace(trace, row=1, col=1)
+        except Exception as e:
+            print(f"Warning: Error creating function plot: {e}")
+            # Add a fallback trace
+            if plot_type == "surface":
+                fig.add_trace(
+                    go.Surface(
+                        x=np.linspace(-1, 1, 10),
+                        y=np.linspace(-1, 1, 10),
+                        z=np.zeros((10, 10)),
+                        colorscale="Viridis",
+                        showscale=False,
+                    ),
+                    row=1,
+                    col=1,
+                )
+            else:
+                fig.add_trace(
+                    go.Contour(
+                        x=np.linspace(-1, 1, 10),
+                        y=np.linspace(-1, 1, 10),
+                        z=np.zeros((10, 10)),
+                        colorscale="Viridis",
+                        showscale=False,
+                    ),
+                    row=1,
+                    col=1,
+                )
 
         # Add convergence plot
         convergence_plot = ConvergencePlot(
             title="Convergence Plot", color_palette=vis_config.palette
         )
 
-        conv_fig = convergence_plot.create_plotly_figure(
-            data=convergence_data, existing_colors=method_colors, annotate_final=True
-        )
+        try:
+            conv_fig = convergence_plot.create_plotly_figure(
+                data=convergence_data,
+                existing_colors=method_colors,
+                annotate_final=True,
+            )
 
-        # Add all traces from convergence plot to the main figure
-        for trace in conv_fig.data:
-            fig.add_trace(trace, row=1, col=2)
+            # Add all traces from convergence plot to the main figure
+            for trace in conv_fig.data:
+                fig.add_trace(trace, row=1, col=2)
+        except Exception as e:
+            print(f"Warning: Error creating convergence plot: {e}")
+            # Add a fallback trace
+            fig.add_trace(
+                go.Scatter(
+                    x=[0],
+                    y=[0],
+                    mode="markers",
+                    marker=dict(color="gray"),
+                    name="No data",
+                ),
+                row=1,
+                col=2,
+            )
 
         # Add error plot if requested
         if include_error_plot:
@@ -364,21 +459,131 @@ class PlotFactory:
                 log_scale=log_scale_error,
             )
 
-            error_fig = error_plot.create_plotly_figure(
-                data=error_data, existing_colors=method_colors, annotate_final=True
-            )
+            try:
+                error_fig = error_plot.create_plotly_figure(
+                    data=error_data, existing_colors=method_colors, annotate_final=True
+                )
 
-            # Add all traces from error plot to the main figure
-            for trace in error_fig.data:
-                fig.add_trace(trace, row=2, col=1)
+                # Add all traces from error plot to the main figure
+                for trace in error_fig.data:
+                    fig.add_trace(trace, row=2, col=1)
+            except Exception as e:
+                print(f"Warning: Error creating error plot: {e}")
+                # Add a fallback trace
+                fig.add_trace(
+                    go.Scatter(
+                        x=[0],
+                        y=[0],
+                        mode="markers",
+                        marker=dict(color="gray"),
+                        name="No data",
+                    ),
+                    row=2,
+                    col=1,
+                )
 
             # Add summary information
-            PlotFactory._add_plotly_summary(methods, fig, row=2, col=2)
+            try:
+                PlotFactory._add_plotly_summary(methods, fig, row=2, col=2)
+            except Exception as e:
+                print(f"Warning: Error creating summary: {e}")
+                # Add a fallback annotation
+                fig.add_annotation(
+                    x=0.5,
+                    y=0.5,
+                    xref=f"x2",
+                    yref=f"y2",
+                    text="Method summary unavailable",
+                    showarrow=False,
+                    font=dict(size=14),
+                )
 
-        # Update layout
+        # Get font settings from config if available
+        font_settings = {"family": "Arial, sans-serif", "size": 14, "color": "#333333"}
+        if hasattr(vis_config, "plotly_font") and vis_config.plotly_font:
+            font_settings = vis_config.plotly_font
+
+        # Get margin settings from config if available
+        margin_settings = {"l": 60, "r": 30, "t": 80, "b": 100, "autoexpand": True}
+        if hasattr(vis_config, "plotly_margin") and vis_config.plotly_margin:
+            margin_settings = vis_config.plotly_margin
+
+        # Get template from config if available
+        template = "plotly_white"
+        if hasattr(vis_config, "plotly_template"):
+            template = vis_config.plotly_template
+
+        # Update layout with enhanced styling
         fig.update_layout(
-            title=vis_config.title, height=height, width=width, template="plotly_white"
+            title={
+                "text": f"<b>{vis_config.title}</b>",
+                "font": {"size": 24, "color": "#333333"},
+                "y": 0.98,
+                "x": 0.5,
+                "xanchor": "center",
+                "yanchor": "top",
+            },
+            height=height,  # None for auto-sizing
+            width=width,  # None for auto-sizing
+            autosize=True,  # Allow browser to set dimensions
+            template=template,
+            font=font_settings,
+            margin=margin_settings,
+            hoverlabel={"bgcolor": "white", "font_size": 12, "bordercolor": "#333333"},
+            legend={
+                "orientation": "h",
+                "yanchor": "bottom",
+                "y": -0.2 if include_error_plot else -0.15,
+                "xanchor": "center",
+                "x": 0.5,
+                "bgcolor": "rgba(255, 255, 255, 0.8)",
+                "bordercolor": "rgba(0, 0, 0, 0.2)",
+                "borderwidth": 1,
+                "font": {"size": 12},
+            },
+            paper_bgcolor=vis_config.background_color,
+            plot_bgcolor="rgba(250, 250, 250, 0.95)",
         )
+
+        # Update x and y axes styling
+        fig.update_xaxes(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor="rgba(200, 200, 200, 0.3)",
+            zeroline=True,
+            zerolinewidth=1.5,
+            zerolinecolor="rgba(0, 0, 0, 0.3)",
+            showline=True,
+            linewidth=1,
+            linecolor="rgba(0, 0, 0, 0.5)",
+        )
+
+        fig.update_yaxes(
+            showgrid=True,
+            gridwidth=1,
+            gridcolor="rgba(200, 200, 200, 0.3)",
+            zeroline=True,
+            zerolinewidth=1.5,
+            zerolinecolor="rgba(0, 0, 0, 0.3)",
+            showline=True,
+            linewidth=1,
+            linecolor="rgba(0, 0, 0, 0.5)",
+        )
+
+        # Set 3D scene options for surface plot
+        if surface_plot and function_space.is_2d:
+            fig.update_scenes(
+                aspectratio={"x": 1, "y": 1, "z": 0.8},
+                camera={
+                    "up": {"x": 0, "y": 0, "z": 1},
+                    "center": {"x": 0, "y": 0, "z": 0},
+                    "eye": {"x": 1.5, "y": 1.5, "z": 1.2},
+                },
+                dragmode="turntable",
+                xaxis_title={"text": "<b>x</b>", "font": font_settings},
+                yaxis_title={"text": "<b>y</b>", "font": font_settings},
+                zaxis_title={"text": "<b>f(x,y)</b>", "font": font_settings},
+            )
 
         return fig
 
@@ -451,7 +656,9 @@ class PlotFactory:
             col: Column index for subplot (1-based)
         """
         # Create summary text (HTML format for plotly)
-        summary_text = "<b>Method Summary:</b><br><br>"
+        summary_text = (
+            "<b style='font-size:14px;'>Method Performance Summary:</b><br><br>"
+        )
 
         for i, method in enumerate(methods):
             history = method.get_iteration_history()
@@ -461,6 +668,9 @@ class PlotFactory:
 
             # Get convergence status
             converged = method.has_converged()
+            status_color = (
+                "#28a745" if converged else "#dc3545"
+            )  # Green if converged, red if not
             status = "Converged" if converged else "Not converged"
 
             # Get iteration count
@@ -473,10 +683,14 @@ class PlotFactory:
             final_value = method.get_current_x()
 
             # Add method info to summary
-            summary_text += f"<b>{i+1}. {method.name}:</b><br>"
-            summary_text += f"&nbsp;&nbsp;&nbsp;Status: {status}<br>"
-            summary_text += f"&nbsp;&nbsp;&nbsp;Iterations: {iteration_count}<br>"
-            summary_text += f"&nbsp;&nbsp;&nbsp;Final error: {final_error:.2e}<br>"
+            summary_text += f"<b style='font-size:13px;'>{i+1}. {method.name}:</b><br>"
+            summary_text += f"&nbsp;&nbsp;&nbsp;Status: <span style='color:{status_color};font-weight:bold;'>{status}</span><br>"
+            summary_text += (
+                f"&nbsp;&nbsp;&nbsp;Iterations: <b>{iteration_count}</b><br>"
+            )
+            summary_text += (
+                f"&nbsp;&nbsp;&nbsp;Final error: <b>{final_error:.2e}</b><br>"
+            )
 
             # Format the final value, handling arrays properly
             if isinstance(final_value, (list, tuple, np.ndarray)):
@@ -495,15 +709,15 @@ class PlotFactory:
                     # If conversion fails, use default string representation
                     final_value_str = str(final_value)
                 summary_text += (
-                    f"&nbsp;&nbsp;&nbsp;Final value: {final_value_str}<br><br>"
+                    f"&nbsp;&nbsp;&nbsp;Final value: <b>{final_value_str}</b><br><br>"
                 )
             else:
                 # For scalar values, use standard formatting
                 summary_text += (
-                    f"&nbsp;&nbsp;&nbsp;Final value: {final_value:.6g}<br><br>"
+                    f"&nbsp;&nbsp;&nbsp;Final value: <b>{final_value:.6g}</b><br><br>"
                 )
 
-        # Add text to figure
+        # Add text to figure with enhanced styling
         fig.add_annotation(
             x=0.05,
             y=0.95,
@@ -514,9 +728,12 @@ class PlotFactory:
             align="left",
             xanchor="left",
             yanchor="top",
-            bgcolor="rgba(255, 255, 255, 0.8)",
-            bordercolor="rgba(0, 0, 0, 0.5)",
+            bgcolor="rgba(255, 255, 255, 0.9)",
+            bordercolor="rgba(0, 0, 0, 0.2)",
             borderwidth=1,
-            borderpad=10,
-            font=dict(family="Arial", size=10),
+            borderpad=15,
+            font=dict(family="Arial, sans-serif", size=12),
+            width=370,
+            height=320,
+            opacity=0.95,
         )

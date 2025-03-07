@@ -620,18 +620,28 @@ def visualize_results(
         print("No valid methods to visualize.")
         return
 
-    # Create visualization configuration
+    # Create enhanced visualization configuration with improved styling
     vis_config = VisualizationConfig(
         title=f"{method_type.capitalize()} Methods for {function_name}",
-        palette="viridis",
+        palette="turbo",  # More visually appealing color palette
+        plotly_template="plotly_white",
+        background_color="rgba(255, 255, 255, 0.95)",
+        use_plotly_3d=viz_3d and config.is_2d,  # Use 3D when appropriate
     )
 
-    # Create function space
+    # Create function space with enhanced title
+    title_prefix = "Root Finding" if method_type == "root" else "Optimization"
     function_space = FunctionSpace(
         func=config.func,
         x_range=config.x_range,
-        title=f"Function: {function_name}",
+        title=f"{title_prefix} for {function_name}",
         is_2d=config.is_2d,
+        # Use colorscale from config
+        colormap=(
+            vis_config.plotly_colorscales["surface"]
+            if hasattr(vis_config, "plotly_colorscales") and viz_3d and config.is_2d
+            else "Viridis"
+        ),
     )
 
     # Prepare data for visualization
@@ -640,37 +650,19 @@ def visualize_results(
     animation_data = prepare_animation_data(methods, is_2d=config.is_2d)
 
     # Create interactive Plotly visualization as the primary visualization
+    # Let it use the config for dimensions - no hardcoded values
     interactive_fig = PlotFactory.create_interactive_comparison(
         methods=methods,
         function_space=function_space,
-        vis_config=vis_config,
+        vis_config=vis_config,  # Pass the enhanced config
         include_error_plot=True,
-        surface_plot=viz_3d and config.is_2d,
+        log_scale_error=True,
+        surface_plot=vis_config.use_plotly_3d,  # Use the config setting
+        # No height/width parameters - let it be responsive
     )
 
-    # Apply enhanced styling to make the plot more eye-catching
-    interactive_fig.update_layout(
-        template="plotly_white",
-        font=dict(family="Arial, sans-serif", size=14),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
-            font=dict(size=12),
-            bordercolor="#E5ECF6",
-            borderwidth=1,
-        ),
-        margin=dict(l=20, r=20, t=60, b=20),
-        title=dict(
-            text=f"<b>{method_type.capitalize()} Methods for {function_name}</b>",
-            font=dict(size=24, color="#2E4057"),
-            x=0.5,
-        ),
-    )
-
-    # Show the interactive plot
+    # Show the interactive plot - no need for additional update_layout as
+    # the enhanced PlotFactory handles styling
     interactive_fig.show()
 
     # Save the visualization if requested
@@ -686,42 +678,36 @@ def visualize_results(
                 full_html=True,
                 include_plotlyjs="cdn",
                 include_mathjax="cdn",
+                config={"responsive": True},  # Make responsive in HTML output
             )
             print(f"Saved visualization to {save_path.with_suffix('.html')}")
         elif viz_format in ["png", "jpg", "jpeg", "webp", "svg", "pdf"]:
+            # For static images, set a reasonable size with higher resolution
             interactive_fig.write_image(
-                save_path.with_suffix(f".{viz_format}"), scale=2
+                save_path.with_suffix(f".{viz_format}"), width=1200, height=800, scale=2
             )
             print(f"Saved visualization to {save_path.with_suffix(f'.{viz_format}')}")
 
-    # Create Plotly animation instead of matplotlib animation
+    # Create Plotly animation with enhanced styling
     plotly_animation = MethodAnimation(
         function_space=function_space,
         title=f"{method_type.capitalize()} Methods Animation",
-        color_palette="viridis",
+        color_palette=vis_config.palette,  # Use the config palette
     )
 
-    # Create Plotly animation
+    # Create Plotly animation - no hardcoded dimensions
     anim_fig = plotly_animation.create_plotly_animation(
         method_paths=animation_data["method_paths"],
         error_data=animation_data["error_data"],
         critical_points=animation_data["critical_points"],
-        surface_plot=viz_3d and config.is_2d,
+        surface_plot=vis_config.use_plotly_3d,  # Use the config setting
+        # No height/width parameters - let it be responsive
+        duration=vis_config.animation_duration,
+        transition_duration=vis_config.animation_transition,
     )
 
-    # Apply enhanced styling to animation
-    anim_fig.update_layout(
-        template="plotly_white",
-        font=dict(family="Arial, sans-serif", size=14),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        title=dict(
-            text=f"<b>{method_type.capitalize()} Methods Animation</b>",
-            font=dict(size=24, color="#2E4057"),
-            x=0.5,
-        ),
-    )
-
-    # Show the animation
+    # Show the animation - no need for additional update_layout
+    # as the enhanced MethodAnimation handles styling
     anim_fig.show()
 
     # Save the animation if requested
@@ -731,16 +717,26 @@ def visualize_results(
                 save_path.with_suffix("_animation.html"),
                 full_html=True,
                 include_plotlyjs="cdn",
+                config={"responsive": True},  # Make responsive in HTML output
             )
             print(f"Saved animation to {save_path.with_suffix('_animation.html')}")
         elif viz_format == "mp4" and hasattr(anim_fig, "write_video"):
             try:
-                anim_fig.write_video(save_path.with_suffix(".mp4"))
+                # For video, set a reasonable size and framerate
+                anim_fig.write_video(
+                    save_path.with_suffix(".mp4"),
+                    width=1200,
+                    height=800,
+                    fps=15,  # Smoother framerate
+                )
                 print(f"Saved animation to {save_path.with_suffix('.mp4')}")
             except Exception as e:
                 print(f"Could not save animation as MP4: {e}")
                 print("Falling back to HTML format for animation.")
-                anim_fig.write_html(save_path.with_suffix("_animation.html"))
+                anim_fig.write_html(
+                    save_path.with_suffix("_animation.html"),
+                    config={"responsive": True},
+                )
                 print(f"Saved animation to {save_path.with_suffix('_animation.html')}")
 
     # Only fallback to matplotlib if explicitly requested or if Plotly is not available

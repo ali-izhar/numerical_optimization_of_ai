@@ -356,6 +356,7 @@ def run_methods(
     viz_3d: bool = False,
     save_data: Optional[Path] = None,
     is_2d: bool = False,
+    show_animation: bool = True,
 ) -> Tuple[List[BaseNumericalMethod], pd.DataFrame]:
     """
     Run specified numerical methods on a function and optionally visualize the results.
@@ -378,6 +379,7 @@ def run_methods(
         viz_3d: Whether to create 3D visualization
         save_data: Path to save iteration history data
         is_2d: Whether the function is 2D
+        show_animation: Whether to generate and display animation
 
     Returns:
         Tuple[List[BaseNumericalMethod], pd.DataFrame]: List of method instances and results table
@@ -543,6 +545,7 @@ def run_methods(
             viz_format=viz_format,
             viz_3d=viz_3d,
             method_type=method_type,
+            show_animation=show_animation,
         )
 
     return methods, results_df
@@ -602,6 +605,7 @@ def visualize_results(
     viz_format: str = "html",
     viz_3d: bool = False,
     method_type: str = "root",
+    show_animation: bool = True,
 ):
     """
     Visualize the results of numerical methods using Plotly for eye-catching visualizations.
@@ -614,6 +618,7 @@ def visualize_results(
         viz_format: Format for saved visualization ("html", "png", etc.)
         viz_3d: Whether to create 3D visualization
         method_type: Type of method (root-finding or optimization)
+        show_animation: Whether to generate and display animation
     """
     # Check if we have any valid methods to visualize
     if not methods:
@@ -688,56 +693,60 @@ def visualize_results(
             )
             print(f"Saved visualization to {save_path.with_suffix(f'.{viz_format}')}")
 
-    # Create Plotly animation with enhanced styling
-    plotly_animation = MethodAnimation(
-        function_space=function_space,
-        title=f"{method_type.capitalize()} Methods Animation",
-        color_palette=vis_config.palette,  # Use the config palette
-    )
+    # Only create animation if show_animation is True
+    if show_animation:
+        # Create Plotly animation with enhanced styling
+        plotly_animation = MethodAnimation(
+            function_space=function_space,
+            title=f"{method_type.capitalize()} Methods Animation",
+            color_palette=vis_config.palette,  # Use the config palette
+        )
 
-    # Create Plotly animation - no hardcoded dimensions
-    anim_fig = plotly_animation.create_plotly_animation(
-        method_paths=animation_data["method_paths"],
-        error_data=animation_data["error_data"],
-        critical_points=animation_data["critical_points"],
-        surface_plot=vis_config.use_plotly_3d,  # Use the config setting
-        # No height/width parameters - let it be responsive
-        duration=vis_config.animation_duration,
-        transition_duration=vis_config.animation_transition,
-    )
+        # Create Plotly animation - no hardcoded dimensions
+        anim_fig = plotly_animation.create_plotly_animation(
+            method_paths=animation_data["method_paths"],
+            error_data=animation_data["error_data"],
+            critical_points=animation_data["critical_points"],
+            surface_plot=vis_config.use_plotly_3d,  # Use the config setting
+            # No height/width parameters - let it be responsive
+            duration=vis_config.animation_duration,
+            transition_duration=vis_config.animation_transition,
+        )
 
-    # Show the animation - no need for additional update_layout
-    # as the enhanced MethodAnimation handles styling
-    anim_fig.show()
+        # Show the animation - no need for additional update_layout
+        # as the enhanced MethodAnimation handles styling
+        anim_fig.show()
 
-    # Save the animation if requested
-    if save_viz:
-        if viz_format == "html":
-            anim_fig.write_html(
-                save_path.with_suffix("_animation.html"),
-                full_html=True,
-                include_plotlyjs="cdn",
-                config={"responsive": True},  # Make responsive in HTML output
-            )
-            print(f"Saved animation to {save_path.with_suffix('_animation.html')}")
-        elif viz_format == "mp4" and hasattr(anim_fig, "write_video"):
-            try:
-                # For video, set a reasonable size and framerate
-                anim_fig.write_video(
-                    save_path.with_suffix(".mp4"),
-                    width=1200,
-                    height=800,
-                    fps=15,  # Smoother framerate
-                )
-                print(f"Saved animation to {save_path.with_suffix('.mp4')}")
-            except Exception as e:
-                print(f"Could not save animation as MP4: {e}")
-                print("Falling back to HTML format for animation.")
+        # Save the animation if requested
+        if save_viz:
+            if viz_format == "html":
                 anim_fig.write_html(
                     save_path.with_suffix("_animation.html"),
-                    config={"responsive": True},
+                    full_html=True,
+                    include_plotlyjs="cdn",
+                    config={"responsive": True},  # Make responsive in HTML output
                 )
                 print(f"Saved animation to {save_path.with_suffix('_animation.html')}")
+            elif viz_format == "mp4" and hasattr(anim_fig, "write_video"):
+                try:
+                    # For video, set a reasonable size and framerate
+                    anim_fig.write_video(
+                        save_path.with_suffix(".mp4"),
+                        width=1200,
+                        height=800,
+                        fps=15,  # Smoother framerate
+                    )
+                    print(f"Saved animation to {save_path.with_suffix('.mp4')}")
+                except Exception as e:
+                    print(f"Could not save animation as MP4: {e}")
+                    print("Falling back to HTML format for animation.")
+                    anim_fig.write_html(
+                        save_path.with_suffix("_animation.html"),
+                        config={"responsive": True},
+                    )
+                    print(
+                        f"Saved animation to {save_path.with_suffix('_animation.html')}"
+                    )
 
     # Only fallback to matplotlib if explicitly requested or if Plotly is not available
     if viz_format == "matplotlib":
@@ -750,13 +759,22 @@ def visualize_results(
         )
         plt.show()
 
-        # Create matplotlib animation
-        anim = plotly_animation.create_matplotlib_animation(
-            method_paths=animation_data["method_paths"],
-            error_data=animation_data["error_data"],
-            critical_points=animation_data["critical_points"],
-        )
-        plt.show()
+        # Create matplotlib animation only if show_animation is True
+        if show_animation:
+            # Create the animation object if it doesn't exist yet
+            if not "plotly_animation" in locals():
+                plotly_animation = MethodAnimation(
+                    function_space=function_space,
+                    title=f"{method_type.capitalize()} Methods Animation",
+                    color_palette=vis_config.palette,
+                )
+
+            anim = plotly_animation.create_matplotlib_animation(
+                method_paths=animation_data["method_paths"],
+                error_data=animation_data["error_data"],
+                critical_points=animation_data["critical_points"],
+            )
+            plt.show()
 
 
 def parse_args():
@@ -794,13 +812,13 @@ def parse_args():
     )
 
     # Optimization subparser
-    opt_parser = subparsers.add_parser("optimize", help="Minimize functions")
+    opt_parser = subparsers.add_parser("optimize", help="Optimize functions")
     opt_parser.add_argument(
         "-f",
         "--function",
         choices=OPTIMIZATION_FUNCTIONS.keys(),
         default="quadratic",
-        help="Function to minimize",
+        help="Function to optimize",
     )
     opt_parser.add_argument(
         "-m",
@@ -813,21 +831,20 @@ def parse_args():
     opt_parser.add_argument(
         "--step-length",
         choices=STEP_LENGTH_METHODS.keys(),
-        help="Step length method for gradient-based optimization",
+        default="backtracking",
+        help="Step length method for gradient descent",
     )
     opt_parser.add_argument(
         "--descent-direction",
         choices=DESCENT_DIRECTION_METHODS.keys(),
-        help="Descent direction method for gradient-based optimization",
+        default="gradient",
+        help="Descent direction method for optimization",
     )
     opt_parser.add_argument(
-        "--2d",
-        dest="is_2d",
-        action="store_true",
-        help="Use 2D optimization (for methods that support it)",
+        "--2d", action="store_true", dest="is_2d", help="Use 2D version of function"
     )
 
-    # Common parameters
+    # Common arguments for both subparsers
     for p in [root_parser, opt_parser]:
         p.add_argument(
             "-x0",
@@ -835,10 +852,14 @@ def parse_args():
             type=float,
             nargs="+",
             default=[1.0],
-            help="Initial point(s) for methods",
+            help="Initial points for the method",
         )
         p.add_argument(
-            "-t", "--tolerance", type=float, default=1e-6, help="Error tolerance"
+            "-t",
+            "--tolerance",
+            type=float,
+            default=1e-6,
+            help="Error tolerance",
         )
         p.add_argument(
             "-i",
@@ -857,7 +878,14 @@ def parse_args():
         p.add_argument(
             "-c", "--config", type=Path, help="Path to configuration JSON file"
         )
-        p.add_argument("--no-viz", action="store_true", help="Disable visualization")
+        p.add_argument(
+            "--no-viz", action="store_true", help="Disable all visualization"
+        )
+        p.add_argument(
+            "--no-animation",
+            action="store_true",
+            help="Disable animation generation (static plots only)",
+        )
         p.add_argument("--save-viz", type=str, help="Path to save visualization")
         p.add_argument(
             "--viz-format",
@@ -920,6 +948,7 @@ def main():
         viz_3d=args.viz_3d,
         save_data=args.save_data,
         is_2d=is_2d,
+        show_animation=not args.no_animation,
     )
 
     return 0

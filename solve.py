@@ -604,7 +604,7 @@ def visualize_results(
     method_type: str = "root",
 ):
     """
-    Visualize the results of numerical methods using the new plot components.
+    Visualize the results of numerical methods using Plotly for eye-catching visualizations.
 
     Args:
         methods: List of method instances
@@ -622,7 +622,8 @@ def visualize_results(
 
     # Create visualization configuration
     vis_config = VisualizationConfig(
-        title=f"{method_type.capitalize()} Methods for {function_name}", palette="Set1"
+        title=f"{method_type.capitalize()} Methods for {function_name}",
+        palette="viridis",
     )
 
     # Create function space
@@ -638,65 +639,128 @@ def visualize_results(
     comparison_data = prepare_method_comparison_data(methods)
     animation_data = prepare_animation_data(methods, is_2d=config.is_2d)
 
-    # Use PlotFactory to create a comparison plot
-    fig, axes = PlotFactory.create_comparison_plot(
+    # Create interactive Plotly visualization as the primary visualization
+    interactive_fig = PlotFactory.create_interactive_comparison(
         methods=methods,
         function_space=function_space,
         vis_config=vis_config,
         include_error_plot=True,
+        surface_plot=viz_3d and config.is_2d,
     )
 
-    # Show the plot
-    plt.show()
-
-    # Create interactive comparison if requested
-    if viz_format == "html":
-        interactive_fig = PlotFactory.create_interactive_comparison(
-            methods=methods,
-            function_space=function_space,
-            vis_config=vis_config,
-            include_error_plot=True,
-            surface_plot=viz_3d and config.is_2d,
-        )
-
-        # Show the interactive plot (if in a Jupyter environment)
-        interactive_fig.show()
-
-        # Save the visualization if requested
-        if save_viz:
-            # Create directory if it doesn't exist
-            save_path = Path(save_viz)
-            save_path.parent.mkdir(parents=True, exist_ok=True)
-
-            # Save the figure
-            interactive_fig.write_html(save_path.with_suffix(".html"))
-            print(f"Saved visualization to {save_path.with_suffix('.html')}")
-
-    # Create animation
-    animation = MethodAnimation(
-        function_space=function_space,
-        title=f"{method_type.capitalize()} Methods Animation",
+    # Apply enhanced styling to make the plot more eye-catching
+    interactive_fig.update_layout(
+        template="plotly_white",
+        font=dict(family="Arial, sans-serif", size=14),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            font=dict(size=12),
+            bordercolor="#E5ECF6",
+            borderwidth=1,
+        ),
+        margin=dict(l=20, r=20, t=60, b=20),
+        title=dict(
+            text=f"<b>{method_type.capitalize()} Methods for {function_name}</b>",
+            font=dict(size=24, color="#2E4057"),
+            x=0.5,
+        ),
     )
 
-    # Create matplotlib animation
-    anim = animation.create_matplotlib_animation(
-        method_paths=animation_data["method_paths"],
-        error_data=animation_data["error_data"],
-        critical_points=animation_data["critical_points"],
-    )
+    # Show the interactive plot
+    interactive_fig.show()
 
-    # Show the animation
-    plt.show()
-
-    # Save the animation if requested
-    if save_viz and viz_format == "mp4":
+    # Save the visualization if requested
+    if save_viz:
         # Create directory if it doesn't exist
         save_path = Path(save_viz)
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Save the animation
-        anim.save(save_path.with_suffix(".mp4"), writer="ffmpeg", dpi=100)
-        print(f"Saved animation to {save_path.with_suffix('.mp4')}")
+        # Save the figure
+        if viz_format == "html":
+            interactive_fig.write_html(
+                save_path.with_suffix(".html"),
+                full_html=True,
+                include_plotlyjs="cdn",
+                include_mathjax="cdn",
+            )
+            print(f"Saved visualization to {save_path.with_suffix('.html')}")
+        elif viz_format in ["png", "jpg", "jpeg", "webp", "svg", "pdf"]:
+            interactive_fig.write_image(
+                save_path.with_suffix(f".{viz_format}"), scale=2
+            )
+            print(f"Saved visualization to {save_path.with_suffix(f'.{viz_format}')}")
+
+    # Create Plotly animation instead of matplotlib animation
+    plotly_animation = MethodAnimation(
+        function_space=function_space,
+        title=f"{method_type.capitalize()} Methods Animation",
+        color_palette="viridis",
+    )
+
+    # Create Plotly animation
+    anim_fig = plotly_animation.create_plotly_animation(
+        method_paths=animation_data["method_paths"],
+        error_data=animation_data["error_data"],
+        critical_points=animation_data["critical_points"],
+        surface_plot=viz_3d and config.is_2d,
+    )
+
+    # Apply enhanced styling to animation
+    anim_fig.update_layout(
+        template="plotly_white",
+        font=dict(family="Arial, sans-serif", size=14),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        title=dict(
+            text=f"<b>{method_type.capitalize()} Methods Animation</b>",
+            font=dict(size=24, color="#2E4057"),
+            x=0.5,
+        ),
+    )
+
+    # Show the animation
+    anim_fig.show()
+
+    # Save the animation if requested
+    if save_viz:
+        if viz_format == "html":
+            anim_fig.write_html(
+                save_path.with_suffix("_animation.html"),
+                full_html=True,
+                include_plotlyjs="cdn",
+            )
+            print(f"Saved animation to {save_path.with_suffix('_animation.html')}")
+        elif viz_format == "mp4" and hasattr(anim_fig, "write_video"):
+            try:
+                anim_fig.write_video(save_path.with_suffix(".mp4"))
+                print(f"Saved animation to {save_path.with_suffix('.mp4')}")
+            except Exception as e:
+                print(f"Could not save animation as MP4: {e}")
+                print("Falling back to HTML format for animation.")
+                anim_fig.write_html(save_path.with_suffix("_animation.html"))
+                print(f"Saved animation to {save_path.with_suffix('_animation.html')}")
+
+    # Only fallback to matplotlib if explicitly requested or if Plotly is not available
+    if viz_format == "matplotlib":
+        # Create matplotlib plots for backward compatibility
+        fig, axes = PlotFactory.create_comparison_plot(
+            methods=methods,
+            function_space=function_space,
+            vis_config=vis_config,
+            include_error_plot=True,
+        )
+        plt.show()
+
+        # Create matplotlib animation
+        anim = plotly_animation.create_matplotlib_animation(
+            method_paths=animation_data["method_paths"],
+            error_data=animation_data["error_data"],
+            critical_points=animation_data["critical_points"],
+        )
+        plt.show()
 
 
 def parse_args():

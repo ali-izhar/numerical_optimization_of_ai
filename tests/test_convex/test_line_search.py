@@ -668,16 +668,6 @@ def test_method_stability():
 
 if __name__ == "__main__":
     # Run the tests
-    test_backtracking_line_search_quadratic()
-    test_backtracking_line_search_rosenbrock()
-    test_wolfe_line_search_quadratic()
-    test_wolfe_line_search_rosenbrock()
-    test_strong_wolfe_line_search_quadratic()
-    test_strong_wolfe_line_search_exponential()
-    test_goldstein_line_search_quadratic()
-    test_goldstein_line_search_rosenbrock()
-    test_comparison_of_methods()
-    test_non_descent_direction_handling()
     test_helper_functions()
     test_edge_case_small_gradient()
     test_edge_case_steep_gradient()

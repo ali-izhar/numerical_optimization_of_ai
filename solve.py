@@ -7,9 +7,7 @@ This script provides a unified interface for both root-finding and optimization 
 allowing for easy comparison and visualization of different algorithms.
 """
 
-import argparse
 import sys
-import json
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -275,7 +273,7 @@ def run_methods(
     elif function_name == "cubic":
         config.derivative = lambda x: 3 * x**2 - 4 * x - 5
     elif function_name == "quadratic":
-        config.derivative = lambda x: 2 * x + 2
+        config.derivative = lambda x: 2 * x
     elif function_name == "rosenbrock":
         # For scalar or 1D case
         if not is_2d:

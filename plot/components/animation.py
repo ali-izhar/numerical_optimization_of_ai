@@ -350,9 +350,6 @@ class MethodAnimation:
             # Single plot, no need for subplots
             fig = go.Figure()
 
-        # Determine max number of frames
-        max_path_length = max(len(path) for path in method_paths.values())
-
         # Create base plot for function space
         if self.function_space.is_2d:
             # 2D function
@@ -509,187 +506,6 @@ class MethodAnimation:
                     col=1,
                 )
 
-        # Add empty traces for each method
-        for method_name, path in method_paths.items():
-            color = self.method_colors.get(method_name, "gray")
-
-            # Add trace for function space
-            if self.function_space.is_2d:
-                # 2D function
-                if surface_plot:
-                    # 3D path
-                    fig.add_trace(
-                        go.Scatter3d(
-                            x=[],
-                            y=[],
-                            z=[],
-                            mode="lines+markers",
-                            line=dict(color=color, width=5, dash="solid"),
-                            marker=dict(
-                                size=8,
-                                color=color,
-                                symbol="circle",
-                                line=dict(width=1, color="white"),
-                            ),
-                            name=method_name,
-                            hoverinfo="name+text",
-                            hovertext=[
-                                f"{method_name} iteration" for _ in range(len(path))
-                            ],
-                        ),
-                        row=1,
-                        col=1,
-                    )
-                else:
-                    # 2D path
-                    fig.add_trace(
-                        go.Scatter(
-                            x=[],
-                            y=[],
-                            mode="lines+markers",
-                            line=dict(color=color, width=3, dash="solid"),
-                            marker=dict(
-                                size=10,
-                                color=color,
-                                symbol="circle",
-                                line=dict(width=1, color="white"),
-                            ),
-                            name=method_name,
-                            hoverinfo="name+text",
-                            hovertext=[
-                                f"{method_name} iteration" for _ in range(len(path))
-                            ],
-                        ),
-                        row=1,
-                        col=1,
-                    )
-            else:
-                # 1D function
-                fig.add_trace(
-                    go.Scatter(
-                        x=[],
-                        y=[],
-                        mode="lines+markers",
-                        line=dict(color=color, width=3, dash="solid"),
-                        marker=dict(
-                            size=10,
-                            color=color,
-                            symbol="circle",
-                            line=dict(width=1, color="white"),
-                        ),
-                        name=method_name,
-                        hoverinfo="name+text",
-                        hovertext=[
-                            f"{method_name} iteration" for _ in range(len(path))
-                        ],
-                    ),
-                    row=1,
-                    col=1,
-                )
-
-            # Add trace for error plot if applicable
-            if show_error_plot and error_data and method_name in error_data:
-                fig.add_trace(
-                    go.Scatter(
-                        x=[],
-                        y=[],
-                        mode="lines+markers",
-                        line=dict(color=color, width=3, dash="solid"),
-                        marker=dict(
-                            size=8,
-                            color=color,
-                            symbol="circle",
-                            line=dict(width=1, color="white"),
-                        ),
-                        name=method_name,
-                        showlegend=False,
-                        hoverinfo="name+text",
-                        hovertext=[
-                            f"{method_name} error"
-                            for _ in range(len(error_data[method_name]))
-                        ],
-                    ),
-                    row=1,
-                    col=2,
-                )
-
-        # Create frames for animation
-        frames = []
-        for frame_idx in range(max_path_length):
-            frame_data = []
-
-            # Add frame data for each method
-            for method_name, path in method_paths.items():
-                # Skip if we've reached the end of this method's path
-                if frame_idx >= len(path):
-                    # Add empty data to maintain trace index consistency
-                    if self.function_space.is_2d and surface_plot:
-                        frame_data.append(go.Scatter3d(x=[], y=[], z=[]))
-                    else:
-                        frame_data.append(go.Scatter(x=[], y=[]))
-
-                    # Add empty data for error plot if applicable
-                    if show_error_plot and error_data and method_name in error_data:
-                        frame_data.append(go.Scatter(x=[], y=[]))
-
-                    continue
-
-                # Process path data based on dimensionality
-                if self.function_space.is_2d:
-                    # 2D function
-                    x_path = [p[0] for p in path[: frame_idx + 1]]
-                    y_path = [p[1] for p in path[: frame_idx + 1]]
-
-                    if surface_plot:
-                        # 3D path with z values
-                        z_path = [
-                            self.function_space.func(p[0], p[1])
-                            for p in zip(x_path, y_path)
-                        ]
-                        frame_data.append(go.Scatter3d(x=x_path, y=y_path, z=z_path))
-                    else:
-                        # 2D path
-                        frame_data.append(go.Scatter(x=x_path, y=y_path))
-                else:
-                    # 1D function
-                    if isinstance(path[0], (int, float, np.number)):
-                        # Path is a list of x values
-                        x_path = path[: frame_idx + 1]
-                        y_path = [self.function_space.func(x) for x in x_path]
-                    else:
-                        # Path is a list of (x, y) tuples
-                        x_path = [p[0] for p in path[: frame_idx + 1]]
-                        y_path = [
-                            p[1] if len(p) > 1 else self.function_space.func(p[0])
-                            for p in path[: frame_idx + 1]
-                        ]
-
-                    frame_data.append(go.Scatter(x=x_path, y=y_path))
-
-                # Add error data if applicable
-                if show_error_plot and error_data and method_name in error_data:
-                    error_values = error_data[method_name]
-
-                    # Skip if we've reached the end of this method's error data
-                    if frame_idx >= len(error_values):
-                        frame_data.append(go.Scatter(x=[], y=[]))
-                        continue
-
-                    # Process error data
-                    iterations = list(range(frame_idx + 1))
-                    errors = error_values[: frame_idx + 1]
-
-                    # Ensure all error values are positive for log scale
-                    errors = [max(1e-15, e) for e in errors]
-
-                    frame_data.append(go.Scatter(x=iterations, y=errors))
-
-            # Create frame
-            frames.append(go.Frame(data=frame_data, name=f"frame{frame_idx}"))
-
-        # Add frames to figure
-        fig.frames = frames
-
         # Configure layout
         fig.update_layout(
             title={
@@ -715,99 +531,6 @@ class MethodAnimation:
                 "borderwidth": 1,
                 "font": {"size": 12},
             },
-            updatemenus=[
-                {
-                    "type": "buttons",
-                    "showactive": False,
-                    "buttons": [
-                        {
-                            "label": "▶ Play",
-                            "method": "animate",
-                            "args": [
-                                None,
-                                {
-                                    "frame": {"duration": duration, "redraw": True},
-                                    "fromcurrent": True,
-                                    "transition": {
-                                        "duration": transition_duration,
-                                        "easing": "cubic-in-out",
-                                    },
-                                },
-                            ],
-                        },
-                        {
-                            "label": "⏸ Pause",
-                            "method": "animate",
-                            "args": [
-                                [None],
-                                {
-                                    "frame": {"duration": 0, "redraw": False},
-                                    "mode": "immediate",
-                                    "transition": {"duration": 0},
-                                },
-                            ],
-                        },
-                        {
-                            "label": "⏮ Reset",
-                            "method": "animate",
-                            "args": [
-                                ["frame0"],
-                                {
-                                    "frame": {"duration": 0, "redraw": True},
-                                    "mode": "immediate",
-                                    "transition": {"duration": 0},
-                                },
-                            ],
-                        },
-                    ],
-                    "x": 0.1,
-                    "y": 0,
-                    "xanchor": "right",
-                    "yanchor": "bottom",
-                    "pad": {"r": 10, "t": 10, "b": 10},
-                    "bgcolor": "rgba(240, 240, 240, 0.8)",
-                    "bordercolor": "rgba(0, 0, 0, 0.2)",
-                    "borderwidth": 1,
-                    "font": {"size": 13},
-                }
-            ],
-            sliders=[
-                {
-                    "active": 0,
-                    "steps": [
-                        {
-                            "args": [
-                                [f"frame{k}"],
-                                {
-                                    "frame": {"duration": 300, "redraw": True},
-                                    "mode": "immediate",
-                                    "transition": {"duration": transition_duration},
-                                },
-                            ],
-                            "label": str(k),
-                            "method": "animate",
-                        }
-                        for k in range(
-                            0, max_path_length, max(1, max_path_length // 10)
-                        )
-                    ],
-                    "currentvalue": {
-                        "prefix": "Frame: ",
-                        "visible": True,
-                        "font": {"size": 14},
-                        "xanchor": "left",
-                    },
-                    "len": 0.9,
-                    "x": 0.1,
-                    "y": 0,
-                    "pad": {"b": 10, "t": 50},
-                    "bgcolor": "rgba(240, 240, 240, 0.3)",
-                    "bordercolor": "rgba(0, 0, 0, 0.2)",
-                    "borderwidth": 1,
-                    "tickwidth": 1,
-                    "tickcolor": "rgba(0, 0, 0, 0.4)",
-                }
-            ],
             margin={"l": 60, "r": 30, "t": 80, "b": 100},
             paper_bgcolor="rgba(255, 255, 255, 0.95)",
             plot_bgcolor="rgba(250, 250, 250, 0.95)",
@@ -910,5 +633,395 @@ class MethodAnimation:
                 },
                 dragmode="turntable",
             )
+
+        # Add animation to the figure
+        fig = self.add_animation_to_plotly_figure(
+            fig=fig,
+            method_paths=method_paths,
+            error_data=error_data,
+            duration=duration,
+            transition_duration=transition_duration,
+            surface_plot=surface_plot,
+        )
+
+        return fig
+
+    def add_animation_to_plotly_figure(
+        self,
+        fig: go.Figure,
+        method_paths: Dict[str, List[Union[float, Tuple[float, float]]]],
+        function_space: Optional[FunctionSpace] = None,
+        method_colors: Optional[Dict[str, str]] = None,
+        error_data: Optional[Dict[str, List[float]]] = None,
+        duration: int = 800,
+        transition_duration: int = 300,
+        surface_plot: bool = False,
+        row: int = 1,
+        col: int = 1,
+    ) -> go.Figure:
+        """
+        Add animation controls and frames to an existing plotly figure.
+
+        Args:
+            fig: The plotly figure to add animation to
+            method_paths: Dictionary mapping method names to lists of points
+            function_space: FunctionSpace object for the function being optimized/analyzed
+            method_colors: Dictionary mapping method names to colors
+            error_data: Dictionary mapping method names to lists of error values
+            duration: Duration of each frame in milliseconds
+            transition_duration: Duration of transition between frames
+            surface_plot: Whether to use 3D surface plot for 2D functions
+            row: Row index for subplots (default: 1)
+            col: Column index for subplots (default: 1)
+
+        Returns:
+            go.Figure: Updated plotly figure with animation controls and frames
+        """
+        if not method_paths:
+            return fig
+
+        # Use the function space from the instance if not provided
+        function_space = function_space or self.function_space
+
+        # Use method colors from instance or from parameter
+        method_colors = method_colors or self.method_colors or {}
+
+        # Update method colors if needed
+        if not method_colors:
+            method_colors = get_method_colors(
+                list(method_paths.keys()),
+                palette=self.color_palette,
+                existing_colors=method_colors,
+            )
+
+        # Store copies of the original traces that aren't part of the animation
+        # This will ensure they don't disappear during animation
+        static_traces = []
+
+        # Save indices of all non-animation traces
+        non_animation_trace_indices = list(range(len(fig.data)))
+
+        # Create animation placeholder traces
+        animation_traces = []
+        animation_trace_indices = []
+
+        # Add empty animation traces that will be updated by frames
+        for method_name, path in method_paths.items():
+            color = method_colors.get(method_name, "blue")
+
+            # Add placeholder traces for animation
+            if function_space.is_2d:
+                if surface_plot:
+                    # For 3D point
+                    point_trace = go.Scatter3d(
+                        x=[],
+                        y=[],
+                        z=[],
+                        mode="markers",
+                        marker=dict(color=color, size=8),
+                        name=f"{method_name} Current",
+                        showlegend=True,
+                    )
+                    fig.add_trace(point_trace, row=row, col=col)
+                    animation_trace_indices.append(len(fig.data) - 1)
+                    animation_traces.append(point_trace)
+
+                    # For 3D path
+                    path_trace = go.Scatter3d(
+                        x=[],
+                        y=[],
+                        z=[],
+                        mode="lines",
+                        line=dict(color=color, width=2),
+                        name=f"{method_name} Path",
+                        showlegend=True,
+                    )
+                    fig.add_trace(path_trace, row=row, col=col)
+                    animation_trace_indices.append(len(fig.data) - 1)
+                    animation_traces.append(path_trace)
+                else:
+                    # For 2D point
+                    point_trace = go.Scatter(
+                        x=[],
+                        y=[],
+                        mode="markers",
+                        marker=dict(color=color, size=8),
+                        name=f"{method_name} Current",
+                        showlegend=True,
+                    )
+                    fig.add_trace(point_trace, row=row, col=col)
+                    animation_trace_indices.append(len(fig.data) - 1)
+                    animation_traces.append(point_trace)
+
+                    # For 2D path
+                    path_trace = go.Scatter(
+                        x=[],
+                        y=[],
+                        mode="lines",
+                        line=dict(color=color, width=2),
+                        name=f"{method_name} Path",
+                        showlegend=True,
+                    )
+                    fig.add_trace(path_trace, row=row, col=col)
+                    animation_trace_indices.append(len(fig.data) - 1)
+                    animation_traces.append(path_trace)
+            else:
+                # For 1D point
+                point_trace = go.Scatter(
+                    x=[],
+                    y=[],
+                    mode="markers",
+                    marker=dict(color=color, size=8),
+                    name=f"{method_name} Current",
+                    showlegend=True,
+                )
+                fig.add_trace(point_trace, row=row, col=col)
+                animation_trace_indices.append(len(fig.data) - 1)
+                animation_traces.append(point_trace)
+
+                # For 1D path
+                path_trace = go.Scatter(
+                    x=[],
+                    y=[],
+                    mode="lines",
+                    line=dict(color=color, width=2),
+                    name=f"{method_name} Path",
+                    showlegend=True,
+                )
+                fig.add_trace(path_trace, row=row, col=col)
+                animation_trace_indices.append(len(fig.data) - 1)
+                animation_traces.append(path_trace)
+
+        # Create a complete snapshot of the non-animated traces
+        for i in range(len(fig.data)):
+            if i not in animation_trace_indices:
+                static_traces.append(fig.data[i])
+
+        # Create frames for animation
+        frames = []
+        max_steps = max(len(path) for path in method_paths.values())
+
+        for step in range(max_steps):
+            frame_data = []
+
+            # First, add all static traces to each frame
+            for trace in static_traces:
+                frame_data.append(trace)
+
+            # Then add the animated traces for this step
+            for method_idx, (method_name, path) in enumerate(method_paths.items()):
+                if step < len(path):
+                    current_point = path[step]
+                    color = method_colors.get(method_name, "blue")
+
+                    # Add current point for this method
+                    if function_space.is_2d:
+                        if surface_plot:
+                            # 3D point
+                            x, y = current_point
+                            z = function_space.func(current_point)
+                            frame_data.append(
+                                go.Scatter3d(
+                                    x=[x],
+                                    y=[y],
+                                    z=[z],
+                                    mode="markers",
+                                    marker=dict(color=color, size=8),
+                                    name=f"{method_name} Current",
+                                    showlegend=True if step == 0 else False,
+                                )
+                            )
+
+                            # 3D path
+                            current_path = path[: step + 1]
+                            xs, ys = zip(*current_path) if current_path else ([], [])
+                            zs = (
+                                [function_space.func(p) for p in current_path]
+                                if current_path
+                                else []
+                            )
+                            frame_data.append(
+                                go.Scatter3d(
+                                    x=xs,
+                                    y=ys,
+                                    z=zs,
+                                    mode="lines",
+                                    line=dict(color=color, width=2),
+                                    name=f"{method_name} Path",
+                                    showlegend=True if step == 0 else False,
+                                )
+                            )
+                        else:
+                            # 2D point
+                            x, y = current_point
+                            frame_data.append(
+                                go.Scatter(
+                                    x=[x],
+                                    y=[y],
+                                    mode="markers",
+                                    marker=dict(color=color, size=8),
+                                    name=f"{method_name} Current",
+                                    showlegend=True if step == 0 else False,
+                                )
+                            )
+
+                            # 2D path
+                            current_path = path[: step + 1]
+                            xs, ys = zip(*current_path) if current_path else ([], [])
+                            frame_data.append(
+                                go.Scatter(
+                                    x=xs,
+                                    y=ys,
+                                    mode="lines",
+                                    line=dict(color=color, width=2),
+                                    name=f"{method_name} Path",
+                                    showlegend=True if step == 0 else False,
+                                )
+                            )
+                    else:
+                        # 1D point
+                        x = current_point
+                        y = function_space.func(x)
+                        frame_data.append(
+                            go.Scatter(
+                                x=[x],
+                                y=[y],
+                                mode="markers",
+                                marker=dict(color=color, size=8),
+                                name=f"{method_name} Current",
+                                showlegend=True if step == 0 else False,
+                            )
+                        )
+
+                        # 1D path
+                        current_path = path[: step + 1]
+                        xs = current_path
+                        ys = [function_space.func(x) for x in xs]
+                        frame_data.append(
+                            go.Scatter(
+                                x=xs,
+                                y=ys,
+                                mode="lines",
+                                line=dict(color=color, width=2),
+                                name=f"{method_name} Path",
+                                showlegend=True if step == 0 else False,
+                            )
+                        )
+
+            # Create frame with all static traces and animated data for this step
+            frames.append(
+                go.Frame(
+                    data=frame_data,
+                    name=f"step_{step}",
+                    traces=list(range(len(frame_data))),
+                )
+            )
+
+        # Add the frames to the figure
+        fig.frames = frames
+
+        # Update animation controls
+        fig.update_layout(
+            updatemenus=[
+                {
+                    "type": "buttons",
+                    "direction": "left",
+                    "x": 0.1,
+                    "y": 1.1,
+                    "xanchor": "right",
+                    "yanchor": "top",
+                    "pad": {"r": 10, "t": 10},
+                    "showactive": False,
+                    "buttons": [
+                        {
+                            "label": "▶ Play",
+                            "method": "animate",
+                            "args": [
+                                None,
+                                {
+                                    "frame": {
+                                        "duration": duration,
+                                        "redraw": True,
+                                    },
+                                    "fromcurrent": True,
+                                    "transition": {
+                                        "duration": transition_duration,
+                                        "easing": "cubic-in-out",
+                                    },
+                                    "mode": "immediate",
+                                },
+                            ],
+                        },
+                        {
+                            "label": "⏸ Pause",
+                            "method": "animate",
+                            "args": [
+                                [None],
+                                {
+                                    "frame": {"duration": 0, "redraw": False},
+                                    "mode": "immediate",
+                                    "transition": {"duration": 0},
+                                },
+                            ],
+                        },
+                        {
+                            "label": "⏮ Reset",
+                            "method": "animate",
+                            "args": [
+                                ["step_0"],
+                                {
+                                    "frame": {"duration": 0, "redraw": True},
+                                    "mode": "immediate",
+                                    "transition": {"duration": 0},
+                                },
+                            ],
+                        },
+                    ],
+                }
+            ],
+            sliders=[
+                {
+                    "active": 0,
+                    "yanchor": "top",
+                    "xanchor": "left",
+                    "currentvalue": {
+                        "font": {"size": 12},
+                        "prefix": "Step: ",
+                        "visible": True,
+                        "xanchor": "right",
+                    },
+                    "pad": {"b": 10, "t": 50},
+                    "len": 0.9,
+                    "x": 0.1,
+                    "y": 0,
+                    "steps": [
+                        {
+                            "args": [
+                                [f"step_{i}"],
+                                {
+                                    "frame": {"duration": 0, "redraw": True},
+                                    "mode": "immediate",
+                                    "transition": {"duration": 0},
+                                },
+                            ],
+                            "label": str(i + 1),
+                            "method": "animate",
+                        }
+                        for i in range(max_steps)
+                    ],
+                }
+            ],
+        )
+
+        # Add title annotation for animation section
+        fig.add_annotation(
+            text="<b>Method Animation</b>",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=1.08,
+            showarrow=False,
+            font=dict(size=16, color="#333333"),
+        )
 
         return fig

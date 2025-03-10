@@ -56,18 +56,7 @@ class VisualizerFactory:
         if vis_config is None:
             vis_config = VisualizationConfig()
 
-        # Determine type of visualizer to create
-        visualizer_type = VisualizerFactory._determine_visualizer_type(method_config)
-
-        # Import appropriate visualizer classes
-        if visualizer_type == VisualizerType.ROOT_FINDING:
-            from plot.root_finder_viz import RootFindingVisualizer
-
-            return RootFindingVisualizer(method_config, methods, vis_config)
-        else:  # OPTIMIZATION
-            from plot.optimizer_viz import OptimizationVisualizer
-
-            return OptimizationVisualizer(method_config, methods, vis_config)
+        return VisualizerFactory._determine_visualizer_type(method_config)
 
     @staticmethod
     def _determine_visualizer_type(

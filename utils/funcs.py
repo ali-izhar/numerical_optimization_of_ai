@@ -1,11 +1,11 @@
 # utils/funcs.py
 
-"""Common test functions for root finding algorithms."""
+"""Common test functions for numerical optimization and root-finding algorithms."""
 
 import os
 import numpy as np
 import torch  # type: ignore
-from typing import Tuple, Callable, Union
+from typing import Tuple, Callable, Union, List, Optional, Dict
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -16,249 +16,427 @@ FuncTriple = Tuple[
 ]
 
 
-# Basic Polynomial Functions
-def quadratic() -> FuncPair:
+class Function:
+    """Base class for mathematical functions used in numerical methods."""
+
+    def __init__(
+        self,
+        name: str,
+        description: str,
+        x_range: Tuple[float, float] = (-10, 10),
+        known_roots: Optional[List[float]] = None,
+    ):
+        """
+        Initialize function.
+
+        Args:
+            name: Name of the function
+            description: Description of the function
+            x_range: Default x-range for visualization
+            known_roots: Known roots of the function (if any)
+        """
+        self.name = name
+        self.description = description
+        self.x_range = x_range
+        self.known_roots = known_roots or []
+
+    def f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        """Evaluate the function at x."""
+        raise NotImplementedError("Function must implement f(x)")
+
+    def df(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        """Evaluate the derivative at x."""
+        raise NotImplementedError("Function must implement df(x)")
+
+    def d2f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        """Evaluate the second derivative at x."""
+        raise NotImplementedError("Function must implement d2f(x) for optimization")
+
+    def get_for_root_finding(self) -> FuncPair:
+        """Get function and derivative for root finding."""
+        return (self.f, self.df)
+
+    def get_for_optimization(
+        self, with_second_derivative: bool = False
+    ) -> Union[FuncPair, FuncTriple]:
+        """Get function and derivatives for optimization."""
+        if with_second_derivative:
+            return (self.f, self.df, self.d2f)
+        return (self.f, self.df)
+
+    def find_root(
+        self, x0: float, method: str = "newton", tol: float = 1e-6, max_iter: int = 100
+    ) -> float:
+        """
+        Find a root of the function using the specified method.
+
+        Args:
+            x0: Initial guess
+            method: Root-finding method ('newton', 'bisection', etc.)
+            tol: Tolerance for convergence
+            max_iter: Maximum number of iterations
+
+        Returns:
+            Root of the function
+        """
+        from solve import run_methods
+
+        methods, results = run_methods(
+            function_name=self.name,
+            method_names=[method],
+            x0_values=[x0],
+            method_type="root",
+            tol=tol,
+            max_iter=max_iter,
+            visualize=False,
+        )
+
+        if len(methods) > 0 and methods[0].has_converged():
+            return methods[0].get_current_x()
+        else:
+            raise ValueError(f"Failed to find root using {method} method")
+
+    def find_minimum(
+        self,
+        x0: float,
+        method: str = "newton_opt",
+        tol: float = 1e-6,
+        max_iter: int = 100,
+    ) -> float:
+        """
+        Find a minimum of the function using the specified method.
+
+        Args:
+            x0: Initial guess
+            method: Optimization method ('newton_opt', 'steepest_descent', etc.)
+            tol: Tolerance for convergence
+            max_iter: Maximum number of iterations
+
+        Returns:
+            Point at which function attains a minimum
+        """
+        from solve import run_methods
+
+        methods, results = run_methods(
+            function_name=self.name,
+            method_names=[method],
+            x0_values=[x0] if not isinstance(x0, list) else x0,
+            method_type="optimize",
+            tol=tol,
+            max_iter=max_iter,
+            visualize=False,
+        )
+
+        if len(methods) > 0 and methods[0].has_converged():
+            return methods[0].get_current_x()
+        else:
+            raise ValueError(f"Failed to find minimum using {method} method")
+
+
+class PolynomialFunction(Function):
+    """Class for polynomial functions."""
+
+    pass
+
+
+class QuadraticFunction(PolynomialFunction):
     """f(x) = x² - 2, root at ±√2."""
-    return (lambda x: x**2 - 2, lambda x: 2 * x)
 
-
-def cubic() -> FuncPair:
-    """f(x) = x³ - x - 2, one real root near x ≈ 1.7693."""
-    return (lambda x: x**3 - x - 2, lambda x: 3 * x**2 - 1)
-
-
-def quartic() -> FuncPair:
-    """f(x) = x⁴ - 5x² + 4, roots at ±1, ±2."""
-    return (lambda x: x**4 - 5 * x**2 + 4, lambda x: 4 * x**3 - 10 * x)
-
-
-# Transcendental Functions
-def exponential() -> FuncPair:
-    """f(x) = e^x - 4, root at ln(4)."""
-    return (lambda x: np.exp(x) - 4, lambda x: np.exp(x))
-
-
-def logarithmic() -> FuncPair:
-    """f(x) = ln(x) - 1, root at e."""
-    return (lambda x: np.log(x) - 1, lambda x: 1 / x)
-
-
-def exp_linear() -> FuncPair:
-    """f(x) = e^x - 2x - 1, root near x ≈ 0.5671."""
-    return (lambda x: np.exp(x) - 2 * x - 1, lambda x: np.exp(x) - 2)
-
-
-# Trigonometric Functions
-def sinusoidal() -> FuncPair:
-    """f(x) = sin(x) - 0.5, roots near x ≈ 0.5236, 2.6180."""
-    return (lambda x: np.sin(x) - 0.5, lambda x: np.cos(x))
-
-
-def cosine() -> FuncPair:
-    """f(x) = cos(x) - x, root near x ≈ 0.7390."""
-    return (lambda x: np.cos(x) - x, lambda x: -np.sin(x) - 1)
-
-
-def tangent() -> FuncPair:
-    """f(x) = tan(x) - x, multiple roots."""
-    return (lambda x: np.tan(x) - x, lambda x: 1 / np.cos(x) ** 2 - 1)
-
-
-# Combined Functions
-def trig_polynomial() -> FuncPair:
-    """f(x) = x³ - 6x² + 11x - 6 + sin(x), multiple roots."""
-    return (
-        lambda x: x**3 - 6 * x**2 + 11 * x - 6 + np.sin(x),
-        lambda x: 3 * x**2 - 12 * x + 11 + np.cos(x),
-    )
-
-
-def exp_sine() -> FuncPair:
-    """f(x) = e^x - sin(x) - 2, root near x ≈ 0.9275."""
-    return (lambda x: np.exp(x) - np.sin(x) - 2, lambda x: np.exp(x) - np.cos(x))
-
-
-# Challenging Functions
-def stiff() -> FuncPair:
-    """f(x) = 1000x³ - 2000x² + 1000x - 0.001, highly stiff system."""
-    return (
-        lambda x: 1000 * x**3 - 2000 * x**2 + 1000 * x - 0.001,
-        lambda x: 3000 * x**2 - 4000 * x + 1000,
-    )
-
-
-def multiple_roots() -> FuncPair:
-    """f(x) = x^5 - 5x^3 - 20x + 5, multiple roots, including 2.0."""
-    return (
-        lambda x: x**5 - 5 * x**3 - 20 * x + 5,
-        lambda x: 5 * x**4 - 15 * x**2 - 20,
-    )
-
-
-def ill_conditioned() -> FuncPair:
-    """A cubic polynomial with ill-conditioned root near x = 1."""
-    return (
-        lambda x: 0.01 * x**3 + x**2 - 0.0001,
-        lambda x: 0.03 * x**2 + 2 * x,
-    )
-
-
-def himmelblau_roots() -> FuncPair:
-    """
-    Modified Himmelblau function for root finding.
-    f(x,y) = (x²+y-11)² + (x+y²-7)²-100
-
-    Has roots (≈ zeros) where the original Himmelblau function equals 100,
-    which creates a closed curve in 2D space.
-    """
-
-    def f(x):
-        if not isinstance(x, np.ndarray) or x.size == 1:
-            raise ValueError("Himmelblau roots function requires 2D input")
-        return (x[0] ** 2 + x[1] - 11) ** 2 + (x[0] + x[1] ** 2 - 7) ** 2 - 100
-
-    def df(x):
-        if not isinstance(x, np.ndarray) or x.size == 1:
-            raise ValueError("Himmelblau roots function requires 2D input")
-        return np.array(
-            [
-                4 * x[0] * (x[0] ** 2 + x[1] - 11) + 2 * (x[0] + x[1] ** 2 - 7),
-                2 * (x[0] ** 2 + x[1] - 11) + 4 * x[1] * (x[0] + x[1] ** 2 - 7),
-            ]
+    def __init__(self):
+        super().__init__(
+            name="quadratic",
+            description="f(x) = x² - 2, roots at ±√2",
+            x_range=(-3, 3),
+            known_roots=[-np.sqrt(2), np.sqrt(2)],
         )
 
-    return (f, df)
+    def f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return x**2 - 2
+
+    def df(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return 2 * x
+
+    def d2f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        if isinstance(x, np.ndarray):
+            return np.full_like(x, 2.0)
+        return 2.0
 
 
-def rastrigin_roots() -> FuncPair:
-    """
-    Modified Rastrigin function for root finding.
-    f(x,y) = 20 + x² + y² - 10(cos(2πx) + cos(2πy)) - 30
-
-    Has roots (zeros) where the original Rastrigin function equals 30,
-    creating interesting patterns of zeroes in 2D space.
-    """
-
-    def f(x):
-        if not isinstance(x, np.ndarray) or x.size != 2:
-            raise ValueError("Rastrigin roots function requires 2D input (x,y)")
-        return (
-            20
-            + x[0] ** 2
-            + x[1] ** 2
-            - 10 * (np.cos(2 * np.pi * x[0]) + np.cos(2 * np.pi * x[1]))
-            - 30
-        )
-
-    def df(x):
-        if not isinstance(x, np.ndarray) or x.size != 2:
-            raise ValueError("Rastrigin roots function requires 2D input (x,y)")
-        return np.array(
-            [
-                2 * x[0] + 20 * np.pi * np.sin(2 * np.pi * x[0]),
-                2 * x[1] + 20 * np.pi * np.sin(2 * np.pi * x[1]),
-            ]
-        )
-
-    return (f, df)
-
-
-# PyTorch-based functions for automatic differentiation
-def quadratic_torch(x: torch.Tensor) -> torch.Tensor:
-    """f(x) = x² - 2 using PyTorch."""
-    return x**2 - 2
-
-
-def cubic_torch(x: torch.Tensor) -> torch.Tensor:
-    """f(x) = x³ - x - 2 using PyTorch."""
-    return x**3 - x - 2
-
-
-def exp_torch(x: torch.Tensor) -> torch.Tensor:
-    """f(x) = e^x - 2x - 1 using PyTorch."""
-    return torch.exp(x) - 2 * x - 1
-
-
-def sin_torch(x: torch.Tensor) -> torch.Tensor:
-    """f(x) = sin(x) - x/2 using PyTorch."""
-    return torch.sin(x) - x / 2
-
-
-def cos_torch(x: torch.Tensor) -> torch.Tensor:
-    """f(x) = cos(x) - x using PyTorch."""
-    return torch.cos(x) - x
-
-
-# Map function names to their implementations
-FUNCTION_MAP = {
-    "quadratic": quadratic(),
-    "cubic": cubic(),
-    "quartic": quartic(),
-    "exponential": exponential(),
-    "logarithmic": logarithmic(),
-    "exp_linear": exp_linear(),
-    "sinusoidal": sinusoidal(),
-    "cosine": cosine(),
-    "tangent": tangent(),
-    "trig_polynomial": trig_polynomial(),
-    "exp_sine": exp_sine(),
-    "stiff": stiff(),
-    "multiple_roots": multiple_roots(),
-    "ill_conditioned": ill_conditioned(),
-    "2d_himmelblau": himmelblau_roots(),
-    "2d_rastrigin": rastrigin_roots(),
-}
-
-# List of all available test functions
-AVAILABLE_FUNCTIONS = list(FUNCTION_MAP.keys())
-
-# PyTorch-based functions
-TORCH_FUNCTIONS = {
-    "quadratic": quadratic_torch,
-    "cubic": cubic_torch,
-    "exp_linear": exp_torch,
-    "sinusoidal": sin_torch,
-    "cosine": cos_torch,
-}
-
-
-def quadratic_min() -> FuncPair:
+class QuadraticMinFunction(PolynomialFunction):
     """f(x) = x², minimum at x = 0."""
 
-    def f(x):
+    def __init__(self):
+        super().__init__(
+            name="quadratic_min",
+            description="f(x) = x², minimum at x = 0",
+            x_range=(-3, 3),
+            known_roots=[0],  # Min point, not a root
+        )
+
+    def f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
         if isinstance(x, np.ndarray) and x.size > 1:
             return np.sum(x**2)
         return float(x**2)
 
-    def df(x):
+    def df(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
         if isinstance(x, np.ndarray) and x.size > 1:
             return 2 * x
         return float(2 * x)
 
-    return (f, df)
+    def d2f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        if isinstance(x, np.ndarray) and x.size > 1:
+            return np.full_like(x, 2.0)
+        return 2.0
 
 
-def cubic_min() -> FuncPair:
+class CubicFunction(PolynomialFunction):
+    """f(x) = x³ - x - 2, one real root near x ≈ 1.7693."""
+
+    def __init__(self):
+        super().__init__(
+            name="cubic",
+            description="f(x) = x³ - x - 2, one real root near x ≈ 1.7693",
+            x_range=(-2, 4),
+            known_roots=[1.7693],
+        )
+
+    def f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return x**3 - x - 2
+
+    def df(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return 3 * x**2 - 1
+
+    def d2f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return 6 * x
+
+
+class CubicMinFunction(PolynomialFunction):
     """f(x) = x³ + x, minimum at x ≈ -0.577."""
-    return (lambda x: x**3 + x, lambda x: 3 * x**2 + 1)
+
+    def __init__(self):
+        super().__init__(
+            name="cubic_min",
+            description="f(x) = x³ + x, minimum at x ≈ -0.577",
+            x_range=(-2, 2),
+            known_roots=[-0.577],  # Min point, not a root
+        )
+
+    def f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return x**3 + x
+
+    def df(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return 3 * x**2 + 1
+
+    def d2f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return 6 * x
 
 
-def quartic_min() -> FuncPair:
+class QuarticFunction(PolynomialFunction):
+    """f(x) = x⁴ - 5x² + 4, roots at ±1, ±2."""
+
+    def __init__(self):
+        super().__init__(
+            name="quartic",
+            description="f(x) = x⁴ - 5x² + 4, roots at ±1, ±2",
+            x_range=(-3, 3),
+            known_roots=[-2, -1, 1, 2],
+        )
+
+    def f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return x**4 - 5 * x**2 + 4
+
+    def df(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return 4 * x**3 - 10 * x
+
+    def d2f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return 12 * x**2 - 10
+
+
+class QuarticMinFunction(PolynomialFunction):
     """f(x) = x⁴ - 2x² + 1, minima at x = ±1."""
-    return (lambda x: x**4 - 2 * x**2 + 1, lambda x: 4 * x**3 - 4 * x)
+
+    def __init__(self):
+        super().__init__(
+            name="quartic_min",
+            description="f(x) = x⁴ - 2x² + 1, minima at x = ±1",
+            x_range=(-2, 2),
+            known_roots=[-1, 1],  # Min points, not roots
+        )
+
+    def f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return x**4 - 2 * x**2 + 1
+
+    def df(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return 4 * x**3 - 4 * x
+
+    def d2f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return 12 * x**2 - 4
 
 
-def rosenbrock() -> FuncPair:
+class TranscendentalFunction(Function):
+    """Class for transcendental functions."""
+
+    pass
+
+
+class ExponentialFunction(TranscendentalFunction):
+    """f(x) = e^x - 4, root at ln(4)."""
+
+    def __init__(self):
+        super().__init__(
+            name="exponential",
+            description="f(x) = e^x - 4, root at ln(4)",
+            x_range=(0, 2),
+            known_roots=[np.log(4)],
+        )
+
+    def f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return np.exp(x) - 4
+
+    def df(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return np.exp(x)
+
+    def d2f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return np.exp(x)
+
+
+class LogarithmicFunction(TranscendentalFunction):
+    """f(x) = ln(x) - 1, root at e."""
+
+    def __init__(self):
+        super().__init__(
+            name="logarithmic",
+            description="f(x) = ln(x) - 1, root at e",
+            x_range=(0.1, 5),
+            known_roots=[np.e],
+        )
+
+    def f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return np.log(x) - 1
+
+    def df(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return 1 / x
+
+    def d2f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return -1 / (x**2)
+
+
+class ExpLinearFunction(TranscendentalFunction):
+    """f(x) = e^x - 2x - 1, root near x ≈ 0.5671."""
+
+    def __init__(self):
+        super().__init__(
+            name="exp_linear",
+            description="f(x) = e^x - 2x - 1, root near x ≈ 0.5671",
+            x_range=(-1, 3),
+            known_roots=[0.5671],
+        )
+
+    def f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return np.exp(x) - 2 * x - 1
+
+    def df(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return np.exp(x) - 2
+
+    def d2f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return np.exp(x)
+
+
+class TrigonometricFunction(TranscendentalFunction):
+    """Class for trigonometric functions."""
+
+    pass
+
+
+class SinusoidalFunction(TrigonometricFunction):
+    """f(x) = sin(x) - 0.5, roots near x ≈ 0.5236, 2.6180."""
+
+    def __init__(self):
+        super().__init__(
+            name="sinusoidal",
+            description="f(x) = sin(x) - 0.5, roots near x ≈ 0.5236, 2.6180",
+            x_range=(0, 2 * np.pi),
+            known_roots=[0.5236, 2.6180],
+        )
+
+    def f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return np.sin(x) - 0.5
+
+    def df(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return np.cos(x)
+
+    def d2f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return -np.sin(x)
+
+
+class CosineFunction(TrigonometricFunction):
+    """f(x) = cos(x) - x, root near x ≈ 0.7390."""
+
+    def __init__(self):
+        super().__init__(
+            name="cosine",
+            description="f(x) = cos(x) - x, root near x ≈ 0.7390",
+            x_range=(-2, 2),
+            known_roots=[0.7390],
+        )
+
+    def f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return np.cos(x) - x
+
+    def df(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return -np.sin(x) - 1
+
+    def d2f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return -np.cos(x)
+
+
+class TangentFunction(TrigonometricFunction):
+    """f(x) = tan(x) - x, multiple roots."""
+
+    def __init__(self):
+        super().__init__(
+            name="tangent",
+            description="f(x) = tan(x) - x, multiple roots",
+            x_range=(-1.5, 1.5),
+            known_roots=[0],  # And many others
+        )
+
+    def f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return np.tan(x) - x
+
+    def df(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return 1 / np.cos(x) ** 2 - 1
+
+    def d2f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        return 2 * np.tan(x) / np.cos(x) ** 2
+
+
+# Multivariable functions for optimization
+
+
+class RosenbrockFunction(Function):
     """Rosenbrock function (banana function): f(x,y) = (1-x)² + 100(y-x²)², minimum at (1,1)."""
 
-    def f(x):
+    def __init__(self):
+        super().__init__(
+            name="rosenbrock",
+            description="Rosenbrock function (banana function): f(x,y) = (1-x)² + 100(y-x²)², minimum at (1,1)",
+            x_range=(-2, 2),
+            known_roots=[1, 1],  # Min point (x,y), not a root
+        )
+
+    def f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
         if not isinstance(x, np.ndarray) or x.size == 1:
-            raise ValueError("Rosenbrock function requires 2D input")
+            # 1D case - simplified version
+            return (1 - x) ** 2
+        # 2D case
         return (1 - x[0]) ** 2 + 100 * (x[1] - x[0] ** 2) ** 2
 
-    def df(x):
+    def df(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
         if not isinstance(x, np.ndarray) or x.size == 1:
-            raise ValueError("Rosenbrock function requires 2D input")
+            # 1D case
+            return -2 * (1 - x)
+        # 2D case - return gradient
         return np.array(
             [
                 -2 * (1 - x[0]) - 400 * x[0] * (x[1] - x[0] ** 2),
@@ -266,20 +444,48 @@ def rosenbrock() -> FuncPair:
             ]
         )
 
-    return (f, df)
+    def d2f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        if not isinstance(x, np.ndarray) or x.size == 1:
+            # 1D case
+            return 2.0
+        # 2D case - return Hessian
+        return np.array(
+            [
+                [2 + 1200 * x[0] ** 2 - 400 * x[1], -400 * x[0]],
+                [-400 * x[0], 200],
+            ]
+        )
 
 
-def himmelblau() -> FuncPair:
+class HimmelblauFunction(Function):
     """Himmelblau's function: f(x,y) = (x²+y-11)² + (x+y²-7)², 4 local minima."""
 
-    def f(x):
+    def __init__(self):
+        super().__init__(
+            name="himmelblau",
+            description="Himmelblau's function: f(x,y) = (x²+y-11)² + (x+y²-7)², 4 local minima",
+            x_range=(-5, 5),
+            # Min points (x,y), not roots
+            known_roots=[
+                [3.0, 2.0],
+                [-2.805118, 3.131312],
+                [-3.779310, -3.283186],
+                [3.584428, -1.848126],
+            ],
+        )
+
+    def f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
         if not isinstance(x, np.ndarray) or x.size == 1:
-            raise ValueError("Himmelblau function requires 2D input")
+            # 1D case (not typical for Himmelblau)
+            return (x**2 + 2 - 11) ** 2 + (x + 4 - 7) ** 2
+        # 2D case
         return (x[0] ** 2 + x[1] - 11) ** 2 + (x[0] + x[1] ** 2 - 7) ** 2
 
-    def df(x):
+    def df(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
         if not isinstance(x, np.ndarray) or x.size == 1:
-            raise ValueError("Himmelblau function requires 2D input")
+            # 1D case
+            return 4 * x * (x**2 + 2 - 11) + 2 * (x + 4 - 7)
+        # 2D case - return gradient
         return np.array(
             [
                 4 * x[0] * (x[0] ** 2 + x[1] - 11) + 2 * (x[0] + x[1] ** 2 - 7),
@@ -287,252 +493,109 @@ def himmelblau() -> FuncPair:
             ]
         )
 
-    return (f, df)
-
-
-def rastrigin() -> FuncPair:
-    """Rastrigin function: f(x) = 10n + Σ(x_i² - 10cos(2πx_i)), global minimum at origin."""
-
-    def f(x):
-        return 10 * len(x) + sum(xi**2 - 10 * np.cos(2 * np.pi * xi) for xi in x)
-
-    def df(x):
-        return np.array([2 * xi + 20 * np.pi * np.sin(2 * np.pi * xi) for xi in x])
-
-    return (f, df)
-
-
-def ackley() -> FuncPair:
-    """Ackley function: Complex multimodal function with global minimum at origin."""
-
-    def f(x):
-        n = len(x)
-        sum_sq = sum(xi**2 for xi in x)
-        sum_cos = sum(np.cos(2 * np.pi * xi) for xi in x)
-        return (
-            -20 * np.exp(-0.2 * np.sqrt(sum_sq / n)) - np.exp(sum_cos / n) + 20 + np.e
-        )
-
-    def df(x):
-        n = len(x)
-        sum_sq = sum(xi**2 for xi in x)
-        term1 = 4 * np.exp(-0.2 * np.sqrt(sum_sq / n)) / np.sqrt(n * sum_sq)
+    def d2f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        if not isinstance(x, np.ndarray) or x.size == 1:
+            # 1D case
+            return 12 * x**2 + 4 * 2 - 44 + 2
+        # 2D case - return Hessian
         return np.array(
             [
-                term1 * xi
-                + 2
-                * np.pi
-                * np.exp(np.cos(2 * np.pi * xi) / n)
-                * np.sin(2 * np.pi * xi)
-                / n
-                for xi in x
+                [12 * x[0] ** 2 + 4 * x[1] - 42, 4 * x[0] + 4 * x[1]],
+                [4 * x[0] + 4 * x[1], 4 * x[0] + 12 * x[1] ** 2 - 26],
             ]
         )
 
-    return (f, df)
 
+# Registry of functions
+FUNCTION_REGISTRY = {
+    # Root-finding functions
+    "quadratic": QuadraticFunction(),
+    "cubic": CubicFunction(),
+    "quartic": QuarticFunction(),
+    "exponential": ExponentialFunction(),
+    "logarithmic": LogarithmicFunction(),
+    "exp_linear": ExpLinearFunction(),
+    "sinusoidal": SinusoidalFunction(),
+    "cosine": CosineFunction(),
+    "tangent": TangentFunction(),
+    # Legacy names compatibility
+    "simple_quadratic": QuadraticFunction(),
+    "trigonometric": SinusoidalFunction(),
+    # Optimization functions
+    "quadratic_min": QuadraticMinFunction(),
+    "cubic_min": CubicMinFunction(),
+    "quartic_min": QuarticMinFunction(),
+    "rosenbrock": RosenbrockFunction(),
+    "himmelblau": HimmelblauFunction(),
+}
 
-def beale() -> FuncPair:
-    """Beale function: f(x,y) = (1.5-x+xy)² + (2.25-x+xy²)² + (2.625-x+xy³)², min at (3,0.5)."""
+# Create maps for backward compatibility
+FUNCTION_MAP = {
+    name: func.get_for_root_finding() for name, func in FUNCTION_REGISTRY.items()
+}
 
-    def f(x):
-        return (
-            (1.5 - x[0] + x[0] * x[1]) ** 2
-            + (2.25 - x[0] + x[0] * x[1] ** 2) ** 2
-            + (2.625 - x[0] + x[0] * x[1] ** 3) ** 2
-        )
-
-    def df(x):
-        t1 = 1.5 - x[0] + x[0] * x[1]
-        t2 = 2.25 - x[0] + x[0] * x[1] ** 2
-        t3 = 2.625 - x[0] + x[0] * x[1] ** 3
-        return np.array(
-            [
-                2 * t1 * (-1 + x[1])
-                + 2 * t2 * (-1 + x[1] ** 2)
-                + 2 * t3 * (-1 + x[1] ** 3),
-                2 * t1 * x[0]
-                + 2 * t2 * 2 * x[0] * x[1]
-                + 2 * t3 * 3 * x[0] * x[1] ** 2,
-            ]
-        )
-
-    return (f, df)
-
-
-def booth() -> FuncPair:
-    """Booth function: f(x,y) = (x+2y-7)² + (2x+y-5)², minimum at (1,3)."""
-    return (
-        lambda x: (x[0] + 2 * x[1] - 7) ** 2 + (2 * x[0] + x[1] - 5) ** 2,
-        lambda x: np.array(
-            [
-                2 * (x[0] + 2 * x[1] - 7) + 4 * (2 * x[0] + x[1] - 5),
-                4 * (x[0] + 2 * x[1] - 7) + 2 * (2 * x[0] + x[1] - 5),
-            ]
-        ),
-    )
-
-
-def drug_effectiveness() -> FuncPair:
-    """Drug effectiveness function given by the following formula:
-
-    A pharmaceutical company is analyzing the relationship between drug dosage and its effectiveness
-    in treating patient symptoms. The effectiveness E(d) (measured as a percentage reduction in symptoms)
-    is believed to follow a sigmoid-shaped curve described by the following nonlinear model:
-
-    E(d) = (E_max * d^n) / (K^n + d^n)
-
-    where:
-    - E(d) is the effectiveness at dosage d
-    - E_max is the maximum possible effectiveness
-    - K is the dosage at which effectiveness is half of E_max
-    - n is the Hill coefficient
-
-    The objective function F(E_max, K, n) is:
-    F = sum_{i=1}^7 [E(d_i) - (E_max * d_i^n)/(K^n + d_i^n)]^2
-
-    The gradient ∇F has components:
-    ∂F/∂E_max = -2∑r_i * (d_i^n)/(K^n + d_i^n)
-    ∂F/∂K = 2∑r_i * (E_max * n * K^(n-1) * d_i^n)/(K^n + d_i^n)^2
-    ∂F/∂n = -2∑r_i * E_max * [(d_i^n * K^n * ln(d_i/K))/(K^n + d_i^n)^2]
-
-    where r_i = E(d_i) - (E_max * d_i^n)/(K^n + d_i^n)
-    """
-    # Observed data points (d_i, E(d_i))
-    data = np.array(
-        [
-            [5.0, 10.2],
-            [10.0, 22.8],
-            [20.0, 40.5],
-            [30.0, 55.3],
-            [50.0, 75.1],
-            [80.0, 88.2],
-            [100.0, 93.4],
-        ]
-    )
-
-    # Convert numpy arrays to torch tensors
-    dosages = torch.tensor(data[:, 0], dtype=torch.float64)
-    observed_effects = torch.tensor(data[:, 1], dtype=torch.float64)
-
-    def objective(x: np.ndarray) -> float:
-        """Compute the objective function F(E_max, K, n)."""
-        if len(x) != 3:
-            raise ValueError(
-                "Drug effectiveness function requires 3 parameters: E_max, K, n"
-            )
-
-        # Convert numpy array to torch tensor
-        x_torch = torch.tensor(x, dtype=torch.float64, requires_grad=True)
-        E_max, K, n = x_torch
-
-        # Compute predicted effects for each dosage
-        predicted = (E_max * dosages**n) / (K**n + dosages**n)
-
-        # Compute residuals and sum of squares
-        residuals = observed_effects - predicted
-        loss = torch.sum(residuals**2)
-
-        return float(loss.detach().numpy())
-
-    def gradient(x: np.ndarray) -> np.ndarray:
-        """Compute the gradient ∇F using autograd."""
-        if len(x) != 3:
-            raise ValueError(
-                "Drug effectiveness function requires 3 parameters: E_max, K, n"
-            )
-
-        x_torch = torch.tensor(x, dtype=torch.float64, requires_grad=True)
-        E_max, K, n = x_torch
-
-        # Forward pass
-        predicted = (E_max * dosages**n) / (K**n + dosages**n)
-        residuals = observed_effects - predicted
-        loss = torch.sum(residuals**2)
-
-        # Backward pass
-        loss.backward()
-
-        return x_torch.grad.numpy()
-
-    def hessian(x: np.ndarray) -> np.ndarray:
-        """Compute the Hessian using autograd."""
-        if len(x) != 3:
-            raise ValueError(
-                "Drug effectiveness function requires 3 parameters: E_max, K, n"
-            )
-
-        x_torch = torch.tensor(x, dtype=torch.float64, requires_grad=True)
-
-        def compute_grad(x_t):
-            E_max, K, n = x_t
-            predicted = (E_max * dosages**n) / (K**n + dosages**n)
-            residuals = observed_effects - predicted
-            loss = torch.sum(residuals**2)
-            return torch.autograd.grad(loss, x_t, create_graph=True)[0]
-
-        grad = compute_grad(x_torch)
-        hess = torch.zeros((3, 3), dtype=torch.float64)
-
-        for i in range(3):
-            grad_i = grad[i]
-            for j in range(3):
-                hess[i, j] = torch.autograd.grad(grad_i, x_torch, retain_graph=True)[0][
-                    j
-                ]
-
-        return hess.detach().numpy()
-
-    def get_fit(params):
-        """Generate fit curve points for visualization."""
-        E_max, K, n = params
-        x_fit = np.logspace(
-            np.log10(1), np.log10(150), 100
-        )  # Generate points on log scale
-        y_fit = (E_max * x_fit**n) / (K**n + x_fit**n)
-        return x_fit, y_fit
-
-    # Add is_3d flag and data attribute to indicate this is a 3D optimization problem
-    objective.is_3d = True
-    objective.data = data
-    objective.get_fit = get_fit
-    gradient.is_3d = True
-    hessian.is_3d = True
-
-    return objective, gradient, hessian
-
-
-# Map function names to their minimization implementations
 MINIMIZATION_MAP = {
-    "quadratic": quadratic_min(),
-    "cubic": cubic_min(),
-    "quartic": quartic_min(),
-    "rosenbrock": rosenbrock(),
-    "himmelblau": himmelblau(),
-    "rastrigin": rastrigin(),
-    "ackley": ackley(),
-    "beale": beale(),
-    "booth": booth(),
-    "drug_effectiveness": drug_effectiveness(),
+    name: func.get_for_optimization()
+    for name, func in FUNCTION_REGISTRY.items()
+    if hasattr(func, "get_for_optimization")
 }
 
-# Default ranges for minimization functions
-MINIMIZATION_RANGES = {
-    "quadratic": (-3, 3),
-    "cubic": (-2, 2),
-    "quartic": (-2, 2),
-    "rosenbrock": (-2, 2),
-    "himmelblau": (-5, 5),
-    "rastrigin": (-5.12, 5.12),
-    "ackley": (-5, 5),
-    "beale": (-4.5, 4.5),
-    "booth": (-10, 10),
-    "drug_effectiveness": {  # Dictionary for 3D parameter ranges
-        "E_max": (0, 200),  # Range for maximum effectiveness
-        "K": (0, 100),  # Range for half-maximal concentration
-        "n": (0, 5),  # Range for Hill coefficient
-    },
+# Default ranges for visualization
+FUNCTION_RANGES = {name: func.x_range for name, func in FUNCTION_REGISTRY.items()}
+
+MINIMIZATION_RANGES = FUNCTION_RANGES.copy()
+
+# List of all available test functions
+AVAILABLE_FUNCTIONS = list(FUNCTION_REGISTRY.keys())
+
+# PyTorch-based functions
+TORCH_FUNCTIONS = {
+    "quadratic": lambda x: x**2 - 2,
+    "cubic": lambda x: x**3 - x - 2,
+    "exp_linear": lambda x: torch.exp(x) - 2 * x - 1,
+    "sinusoidal": lambda x: torch.sin(x) - x / 2,
+    "cosine": lambda x: torch.cos(x) - x,
 }
+
+
+def get_function(name: str) -> Function:
+    """Get a Function object by name.
+
+    Args:
+        name: Name of the function
+
+    Returns:
+        Function: The function object
+
+    Raises:
+        ValueError: If the function is not found
+    """
+    if name not in FUNCTION_REGISTRY:
+        raise ValueError(f"Unknown function: {name}")
+    return FUNCTION_REGISTRY[name]
+
+
+def get_test_function(
+    name: str, with_second_derivative: bool = False
+) -> Union[FuncPair, FuncTriple]:
+    """Get a test function and its derivatives by name for root-finding.
+
+    Args:
+        name: Name of the test function
+        with_second_derivative: If True, also returns second derivative
+
+    Returns:
+        Tuple of (function, first derivative) or (function, first derivative, second derivative)
+    """
+    func = get_function(name)
+    if with_second_derivative:
+        return func.f, func.df, func.d2f
+    return func.f, func.df
+
+
+def get_torch_function(name: str) -> Callable[[torch.Tensor], torch.Tensor]:
+    """Get a PyTorch-based test function by name."""
+    return TORCH_FUNCTIONS[name]
 
 
 def get_minimization_function(
@@ -547,92 +610,93 @@ def get_minimization_function(
     Returns:
         Tuple of (function, gradient) or (function, gradient, hessian)
     """
+    func = get_function(name)
     if with_second_derivative:
-        if name == "drug_effectiveness":
-            f, df, d2f = drug_effectiveness()
-            return f, df, d2f
-        elif name == "quadratic":
-            f, df = MINIMIZATION_MAP[name]
-            d2f = lambda x: 2.0  # Constant second derivative
-            return f, df, d2f
-        elif name == "rosenbrock":
-            f, df = MINIMIZATION_MAP[name]
-
-            def d2f(x):
-                return np.array(
-                    [
-                        [2 - 400 * (x[1] - 3 * x[0] ** 2), -400 * x[0]],
-                        [-400 * x[0], 200],
-                    ]
-                )
-
-            return f, df, d2f
-        elif name == "himmelblau":
-            f, df = MINIMIZATION_MAP[name]
-
-            def d2f(x):
-                return np.array(
-                    [
-                        [12 * x[0] ** 2 + 4 * x[1] - 42, 4 * x[0] + 4 * x[1]],
-                        [4 * x[0] + 4 * x[1], 4 * x[0] + 12 * x[1] ** 2 - 26],
-                    ]
-                )
-
-            return f, df, d2f
-        else:
-            raise ValueError(f"Second derivative not implemented for function: {name}")
-    return MINIMIZATION_MAP[name]
+        return func.f, func.df, func.d2f
+    return func.f, func.df
 
 
-def get_test_function(
-    name: str, with_second_derivative: bool = False
-) -> Union[FuncPair, FuncTriple]:
-    """Get a test function and its derivatives by name.
+def determine_x_range(
+    function_name: str,
+    x0_values: List[float],
+    method_type: str,
+    specified_range: Optional[Tuple[float, float]] = None,
+) -> Tuple[float, float]:
+    """
+    Determine an appropriate x-range for visualization based on the function and initial points.
 
     Args:
-        name: Name of the test function
-        with_second_derivative: If True, also returns second derivative
+        function_name: Name of the function
+        x0_values: Initial points
+        method_type: Type of method (root-finding or optimization)
+        specified_range: User-specified range (if provided)
 
     Returns:
-        Tuple of (function, first derivative) or (function, first derivative, second derivative)
+        Tuple[float, float]: Appropriate x-range for visualization
     """
-    if with_second_derivative:
-        if name == "quadratic":
-            f, df = FUNCTION_MAP[name]
-            d2f = lambda x: 2.0  # Constant second derivative for quadratic
-            return f, df, d2f
-        elif name == "cubic":
-            f, df = FUNCTION_MAP[name]
-            d2f = lambda x: 6 * x  # Second derivative for cubic
-            return f, df, d2f
-        elif name == "quartic":
-            f, df = FUNCTION_MAP[name]
-            d2f = lambda x: 12 * x**2 - 4  # Second derivative for quartic
-            return f, df, d2f
-        else:
-            raise ValueError(f"Second derivative not implemented for function: {name}")
-    return FUNCTION_MAP[name]
+    if specified_range is not None:
+        return specified_range
+
+    # Get the function object
+    try:
+        func = get_function(function_name)
+        return func.x_range
+    except ValueError:
+        pass
+
+    # Choose the appropriate ranges dictionary based on method type
+    ranges_dict = MINIMIZATION_RANGES if method_type == "optimize" else FUNCTION_RANGES
+
+    # If the function is in the ranges dictionary, return its range
+    if function_name in ranges_dict:
+        # Special case for drug_effectiveness which has a dictionary of ranges
+        if isinstance(ranges_dict[function_name], dict):
+            # For 3D functions with separate parameter ranges, return default range
+            return (-5, 5)  # Default range for complex functions
+        return ranges_dict[function_name]
+
+    # If no default range exists, use the initial points to determine a range
+    min_x0 = min(x0_values)
+    max_x0 = max(x0_values)
+
+    # Ensure the range has a minimum width
+    width = max(max_x0 - min_x0, 1.0)
+
+    # Add padding
+    padding = width * 0.5
+
+    return (min_x0 - padding, max_x0 + padding)
 
 
-def get_torch_function(name: str) -> Callable[[torch.Tensor], torch.Tensor]:
-    """Get a PyTorch-based test function by name."""
-    return TORCH_FUNCTIONS[name]
+def register_custom_function(func: Function) -> None:
+    """
+    Register a custom function to be used with the numerical methods.
+
+    Args:
+        func: Custom Function object to register
+    """
+    FUNCTION_REGISTRY[func.name] = func
+    FUNCTION_RANGES[func.name] = func.x_range
+    FUNCTION_MAP[func.name] = func.get_for_root_finding()
+    MINIMIZATION_MAP[func.name] = func.get_for_optimization()
+    AVAILABLE_FUNCTIONS.append(func.name)
 
 
-# # Example usage in doctest format:
-# """
-# >>> f, df = get_test_function("quadratic")
-# >>> f(2.0)  # Should be close to 2
-# 2.0
-# >>> df(2.0)  # Derivative at x=2
-# 4.0
+def list_function_categories() -> Dict[str, List[str]]:
+    """
+    List all available functions by category.
 
-# >>> f, df = get_test_function("exponential")
-# >>> abs(f(np.log(4)))  # Should be close to 0
-# 0.0
-# """
+    Returns:
+        Dictionary of function categories and their function names
+    """
+    categories = {}
 
-# if __name__ == "__main__":
-#     import doctest
+    # Categorize functions
+    for name, func in FUNCTION_REGISTRY.items():
+        category = func.__class__.__bases__[0].__name__
+        if category not in categories:
+            categories[category] = []
+        if name not in categories[category]:
+            categories[category].append(name)
 
-#     doctest.testmod()
+    return categories

@@ -1,79 +1,18 @@
 #!/usr/bin/env python3
 
-"""
-Command-line interface for numerical optimization tools.
-
-This module provides command-line argument parsing and the main entry point
-for the numerical optimization utility.
-"""
+"""Command-line interface for numerical optimization tools."""
 
 import argparse
-import sys
-import numpy as np
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union, Any
 
-# Import needed functions from other modules
-from utils.file_manager import load_config_file
+from utils.funcs import FUNCTION_REGISTRY
 
-# Define functions mapping as in solve.py
-# Test Functions for Root-Finding
-ROOT_FUNCTIONS = {
-    "simple_quadratic": lambda x: x**2 - 4,
-    "cubic": lambda x: x**3 - 2 * x**2 - 5 * x + 6,
-    "trigonometric": lambda x: np.sin(x) - 0.5,
-    "exponential": lambda x: np.exp(x) - 5,
-    "logarithmic": lambda x: np.log(x) - 1,
-    "compound": lambda x: np.sin(x) * np.exp(-0.1 * x) - 0.2,
-    "discontinuous": lambda x: 1 / x if x != 0 else float("inf"),
-    "stiff": lambda x: 1e6 * (x - 1) + 1e-6 * np.sin(1000 * x),
-}
+# Get all function objects from the registry
+AVAILABLE_FUNCTIONS = list(FUNCTION_REGISTRY.keys())
 
-# Test Functions for Optimization
-OPTIMIZATION_FUNCTIONS = {
-    "quadratic": lambda x: x**2 + 2 * x + 1,
-    "rosenbrock": lambda x: (
-        (1 - x[0]) ** 2 + 100 * (x[1] - x[0] ** 2) ** 2
-        if isinstance(x, (list, np.ndarray)) and hasattr(x, "__len__") and len(x) > 1
-        else (1 - x) ** 2
-    ),
-    "himmelblau": lambda x: (
-        (x[0] ** 2 + x[1] - 11) ** 2 + (x[0] + x[1] ** 2 - 7) ** 2
-        if isinstance(x, (list, np.ndarray)) and hasattr(x, "__len__") and len(x) > 1
-        else (x**2 + 2 - 11) ** 2 + (x + 4 - 7) ** 2
-    ),
-    "rastrigin": lambda x: (
-        20
-        + x[0] ** 2
-        - 10 * np.cos(2 * np.pi * x[0])
-        + x[1] ** 2
-        - 10 * np.cos(2 * np.pi * x[1])
-        if isinstance(x, (list, np.ndarray)) and hasattr(x, "__len__") and len(x) > 1
-        else 10 + x**2 - 10 * np.cos(2 * np.pi * x)
-    ),
-    "beale": lambda x: (
-        (1.5 - x[0] + x[0] * x[1]) ** 2
-        + (2.25 - x[0] + x[0] * x[1] ** 2) ** 2
-        + (2.625 - x[0] + x[0] * x[1] ** 3) ** 2
-        if isinstance(x, (list, np.ndarray)) and hasattr(x, "__len__") and len(x) > 1
-        else (1.5 - x + x * 0.5) ** 2
-    ),
-    "booth": lambda x: (
-        (x[0] + 2 * x[1] - 7) ** 2 + (2 * x[0] + x[1] - 5) ** 2
-        if isinstance(x, (list, np.ndarray)) and hasattr(x, "__len__") and len(x) > 1
-        else (x + 2 * 0.5 - 7) ** 2
-    ),
-    "matyas": lambda x: (
-        0.26 * (x[0] ** 2 + x[1] ** 2) - 0.48 * x[0] * x[1]
-        if isinstance(x, (list, np.ndarray)) and hasattr(x, "__len__") and len(x) > 1
-        else 0.26 * (x**2 + 0.5**2) - 0.48 * x * 0.5
-    ),
-    "sphere": lambda x: (
-        sum(xi**2 for xi in x)
-        if isinstance(x, (list, np.ndarray)) and hasattr(x, "__len__") and len(x) > 1
-        else x**2
-    ),
-}
+# Create dictionaries of functions for root-finding and optimization
+ROOT_FUNCTIONS = {name: func.f for name, func in FUNCTION_REGISTRY.items()}
+OPTIMIZATION_FUNCTIONS = {name: func.f for name, func in FUNCTION_REGISTRY.items()}
 
 # Root-Finding Methods
 ROOT_FINDING_METHODS = {
@@ -138,8 +77,8 @@ def parse_args():
     root_parser.add_argument(
         "-f",
         "--function",
-        choices=ROOT_FUNCTIONS.keys(),
-        default="simple_quadratic",
+        choices=AVAILABLE_FUNCTIONS,
+        default="quadratic",
         help="Function to find roots of",
     )
     root_parser.add_argument(
@@ -156,7 +95,7 @@ def parse_args():
     opt_parser.add_argument(
         "-f",
         "--function",
-        choices=OPTIMIZATION_FUNCTIONS.keys(),
+        choices=AVAILABLE_FUNCTIONS,
         default="quadratic",
         help="Function to optimize",
     )
@@ -184,7 +123,23 @@ def parse_args():
         "--2d", action="store_true", dest="is_2d", help="Use 2D version of function"
     )
 
-    # Common arguments for both subparsers
+    # List functions subparser
+    list_parser = subparsers.add_parser(
+        "list", help="List available functions by category"
+    )
+    list_parser.add_argument(
+        "--details",
+        action="store_true",
+        help="Show detailed information for each function",
+    )
+    list_parser.add_argument(
+        "--category",
+        choices=["Polynomial", "Transcendental", "Trigonometric", "All"],
+        default="All",
+        help="Filter functions by category",
+    )
+
+    # Common arguments for both root-finding and optimization subparsers
     for p in [root_parser, opt_parser]:
         p.add_argument(
             "-x0",
@@ -243,59 +198,3 @@ def parse_args():
         )
 
     return parser.parse_args()
-
-
-def main():
-    """Main function."""
-    # Import run_methods here to avoid circular imports
-    from solve import run_methods
-
-    args = parse_args()
-
-    # Default to root-finding if no problem type specified
-    if args.problem_type is None:
-        args.problem_type = "root"
-        args.function = "simple_quadratic"
-        args.methods = ["bisection", "newton"]
-        args.initial_points = [1.0]
-
-    # Determine method type
-    method_type = args.problem_type
-
-    # Load configuration file if provided
-    config = {}
-    if hasattr(args, "config") and args.config:
-        config = load_config_file(args.config)
-
-    # Set is_2d flag
-    is_2d = False
-    if hasattr(args, "is_2d"):
-        is_2d = args.is_2d
-
-    # Run methods
-    methods, results = run_methods(
-        function_name=args.function,
-        method_names=args.methods,
-        x0_values=args.initial_points,
-        method_type=method_type,
-        tol=args.tolerance,
-        max_iter=args.max_iterations,
-        x_range=args.range,
-        step_length_method=args.step_length if hasattr(args, "step_length") else None,
-        descent_direction_method=(
-            args.descent_direction if hasattr(args, "descent_direction") else None
-        ),
-        visualize=not args.no_viz,
-        save_viz=args.save_viz,
-        viz_format=args.viz_format,
-        viz_3d=args.viz_3d,
-        save_data=args.save_data,
-        is_2d=is_2d,
-        show_animation=not args.no_animation,
-    )
-
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

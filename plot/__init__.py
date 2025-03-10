@@ -10,7 +10,7 @@ This package provides tools for visualizing numerical methods, including:
 """
 
 # Import components
-from plot.components import (
+from .components import (
     VisualizationConfig,
     FunctionSpace,
     ConvergencePlot,
@@ -19,10 +19,10 @@ from plot.components import (
 )
 
 # Import factories
-from plot.factory import VisualizerFactory, VisualizerType, PlotFactory
+from .factory import VisualizerFactory, VisualizerType, PlotFactory
 
 # Import utilities
-from plot.utils import (
+from .utils import (
     # Color utilities
     generate_colors,
     create_color_map,

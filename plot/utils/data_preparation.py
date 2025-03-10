@@ -10,7 +10,7 @@ import numpy as np
 from algorithms.convex.protocols import BaseNumericalMethod, IterationData
 import plotly.graph_objects as go
 import plotly.express as px
-from plot.utils.dimension_utils import is_2d_function
+from .dimension_utils import is_2d_function
 
 
 def extract_iteration_data(

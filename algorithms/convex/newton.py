@@ -337,7 +337,7 @@ class NewtonMethod(BaseNumericalMethod):
                     else:
                         # Take a small step in the direction that reduces |f(x)|
                         sign = -1.0 if fx > 0 else 1.0
-                        
+
                         # Special handling for cubic function with root at x=1
                         if abs(x - 1.0) < 0.02:
                             # Direct step toward x=1.0
@@ -346,7 +346,7 @@ class NewtonMethod(BaseNumericalMethod):
                             if self.stuck_iterations > 2:
                                 step = -(x - 1.0)  # Move directly to x=1.0
                             return step
-                        
+
                         # New special handling for quadratic functions
                         # Detect if we're likely dealing with a quadratic with zero derivative
                         # at the origin, which means we're at a critical point (min, max, or saddle)
@@ -355,18 +355,20 @@ class NewtonMethod(BaseNumericalMethod):
                             # toward a likely root at sqrt(c)
                             # Estimate sqrt(|fx|) to get close to the root quickly
                             estimated_root = math.sqrt(abs(fx))
-                            return sign * estimated_root  # Take a large step directly toward the likely root
-                        
+                            return (
+                                sign * estimated_root
+                            )  # Take a large step directly toward the likely root
+
                         # For near-zero derivative with non-zero x, take a more aggressive step
                         if abs(x) >= 0.001:
                             return sign * max(0.1, abs(x)) * (1.0 + abs(fx))
-                        
+
                         # Default small step behavior (improved from original)
                         return sign * 0.1 * (1.0 + abs(fx))
 
                 # Standard Newton step for root-finding with safeguards
                 direction = -fx / dfx
-                
+
                 # Implement damped Newton steps for extreme values
                 # Use more conservative steps when far from solution
 

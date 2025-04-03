@@ -275,22 +275,11 @@ def run_methods(
     elif function_name == "quadratic":
         config.derivative = lambda x: 2 * x
     elif function_name == "rosenbrock":
-        # For scalar or 1D case
-        if not is_2d:
-            config.derivative = lambda x: -2 + 2 * x  # derivative of (1-x)^2
-        else:
-            # For 2D case - gradient of Rosenbrock function
-            config.derivative = lambda x: np.array(
-                [
-                    -2 * (1 - x[0]) - 400 * x[0] * (x[1] - x[0] ** 2),
-                    200 * (x[1] - x[0] ** 2),
-                ]
-            )
-
-            # Hessian matrix for Newton method
-            config.hessian = lambda x: np.array(
-                [[2 + 1200 * x[0] ** 2 - 400 * x[1], -400 * x[0]], [-400 * x[0], 200]]
-            )
+        # Get the function object directly
+        func_obj = get_function(function_name)
+        # Use its df and d2f methods
+        config.derivative = func_obj.df
+        config.hessian = func_obj.d2f
     elif function_name == "diagonal_quadratic":
         # Get the function object directly
         func_obj = get_function(function_name)

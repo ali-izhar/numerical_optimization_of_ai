@@ -426,35 +426,125 @@ class RosenbrockFunction(Function):
         )
 
     def f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
-        if not isinstance(x, np.ndarray) or x.size == 1:
-            # 1D case - simplified version
-            return (1 - x) ** 2
-        # 2D case
-        return (1 - x[0]) ** 2 + 100 * (x[1] - x[0] ** 2) ** 2
+        # Handle scalar case (single dimension)
+        if isinstance(x, (int, float)):
+            return (1 - x) ** 2  # Simplified version
+
+        # Convert to numpy array if it's a list
+        if isinstance(x, list):
+            x = np.array(x)
+
+        # Handle numpy scalar (0-dimensional array)
+        if isinstance(x, np.ndarray) and x.ndim == 0:
+            return (1 - float(x)) ** 2
+
+        # Now compute based on dimensionality
+        if x.size == 1:
+            return (1 - x.item()) ** 2
+        elif x.size == 2:
+            # Classic 2D Rosenbrock
+            return (1 - x[0]) ** 2 + 100 * (x[1] - x[0] ** 2) ** 2
+        else:
+            # N-dimensional Rosenbrock
+            sum_val = 0.0
+            for i in range(x.size - 1):
+                sum_val += 100 * (x[i + 1] - x[i] ** 2) ** 2 + (1 - x[i]) ** 2
+            return sum_val
 
     def df(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
-        if not isinstance(x, np.ndarray) or x.size == 1:
-            # 1D case
-            return -2 * (1 - x)
-        # 2D case - return gradient
-        return np.array(
-            [
-                -2 * (1 - x[0]) - 400 * x[0] * (x[1] - x[0] ** 2),
-                200 * (x[1] - x[0] ** 2),
-            ]
-        )
+        # Handle scalar case
+        if isinstance(x, (int, float)):
+            return -2 * (1 - x)  # Derivative of (1-x)²
+
+        # Convert to numpy array if it's a list
+        if isinstance(x, list):
+            x = np.array(x)
+
+        # Handle numpy scalar (0-dimensional array)
+        if isinstance(x, np.ndarray) and x.ndim == 0:
+            return np.array(-2 * (1 - float(x)))
+
+        # Now compute gradient based on dimensionality
+        if x.size == 1:
+            # Handle 1D array
+            return np.array([-2 * (1 - x.item())])
+        elif x.size == 2:
+            # Classic 2D Rosenbrock gradient
+            return np.array(
+                [
+                    -2 * (1 - x[0]) - 400 * x[0] * (x[1] - x[0] ** 2),
+                    200 * (x[1] - x[0] ** 2),
+                ]
+            )
+        else:
+            # N-dimensional Rosenbrock gradient
+            grad = np.zeros_like(x)
+            n = x.size
+
+            # First element has special case
+            grad[0] = -2 * (1 - x[0]) - 400 * x[0] * (x[1] - x[0] ** 2)
+
+            # Middle elements
+            for i in range(1, n - 1):
+                grad[i] = (
+                    200 * (x[i] - x[i - 1] ** 2)
+                    - 400 * x[i] * (x[i + 1] - x[i] ** 2)
+                    - 2 * (1 - x[i])
+                )
+
+            # Last element has special case
+            if n > 1:
+                grad[n - 1] = 200 * (x[n - 1] - x[n - 2] ** 2)
+
+            return grad
 
     def d2f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
-        if not isinstance(x, np.ndarray) or x.size == 1:
-            # 1D case
-            return 2.0
-        # 2D case - return Hessian
-        return np.array(
-            [
-                [2 + 1200 * x[0] ** 2 - 400 * x[1], -400 * x[0]],
-                [-400 * x[0], 200],
-            ]
-        )
+        # Handle scalar case
+        if isinstance(x, (int, float)):
+            return 2.0  # Second derivative of (1-x)²
+
+        # Convert to numpy array if it's a list
+        if isinstance(x, list):
+            x = np.array(x)
+
+        # Handle numpy scalar (0-dimensional array)
+        if isinstance(x, np.ndarray) and x.ndim == 0:
+            return np.array([[2.0]])
+
+        # Compute Hessian based on dimensionality
+        if x.size == 1:
+            return np.array([[2.0]])
+        elif x.size == 2:
+            # Classic 2D Rosenbrock Hessian
+            return np.array(
+                [[2 + 1200 * x[0] ** 2 - 400 * x[1], -400 * x[0]], [-400 * x[0], 200]]
+            )
+        else:
+            # N-dimensional Rosenbrock Hessian
+            n = x.size
+            H = np.zeros((n, n))
+
+            # First diagonal element
+            H[0, 0] = 2 + 1200 * x[0] ** 2 - 400 * x[1]
+            if n > 1:
+                H[0, 1] = -400 * x[0]
+                H[1, 0] = -400 * x[0]
+
+            # Middle elements
+            for i in range(1, n - 1):
+                H[i, i] = 202 + 1200 * x[i] ** 2 - 400 * x[i + 1]  # Diagonal
+                H[i, i - 1] = -400 * x[i - 1]  # Below diagonal
+                H[i - 1, i] = -400 * x[i - 1]  # Above diagonal
+                H[i, i + 1] = -400 * x[i]  # Below diagonal
+                H[i + 1, i] = -400 * x[i]  # Above diagonal
+
+            # Last diagonal element
+            if n > 1:
+                H[n - 1, n - 1] = 200
+                H[n - 1, n - 2] = -400 * x[n - 2]
+                H[n - 2, n - 1] = -400 * x[n - 2]
+
+            return H
 
 
 class HimmelblauFunction(Function):

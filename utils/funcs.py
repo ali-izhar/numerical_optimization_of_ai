@@ -506,6 +506,84 @@ class HimmelblauFunction(Function):
         )
 
 
+# New function for Problem 5
+class DiagonalQuadraticFunction(Function):
+    """Diagonal Quadratic function: f(x) = sum_{i=1}^20 (1/i) * x_i^2, minimum at origin."""
+
+    def __init__(self):
+        self.n_dim = 20
+        super().__init__(
+            name="diagonal_quadratic",
+            description=f"f(x) = sum_{{i=1}}^{self.n_dim} (1/i) * x_i^2, minimum at x=0",
+            x_range=(-5, 5),  # Default range per dimension
+            known_roots=[np.zeros(self.n_dim)],  # Min point (x vector)
+        )
+
+    def f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        # Handle scalar case (single dimension)
+        if isinstance(x, (int, float)):
+            return x**2  # Just the first dimension
+
+        # Convert to numpy array if it's a list
+        if isinstance(x, list):
+            x = np.array(x)
+
+        # Handle incomplete arrays (pad with zeros)
+        if isinstance(x, np.ndarray):
+            if x.size < self.n_dim:
+                temp = np.zeros(self.n_dim)
+                temp[: x.size] = x
+                x = temp
+            elif x.size > self.n_dim:
+                x = x[: self.n_dim]
+
+        # Now compute the actual function
+        coeffs = 1.0 / np.arange(1, self.n_dim + 1)
+        return np.sum(coeffs * (x**2))
+
+    def df(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        # Handle scalar case
+        if isinstance(x, (int, float)):
+            return 2.0 * x  # Just derivative for first dimension
+
+        # Convert to numpy array if it's a list
+        if isinstance(x, list):
+            x = np.array(x)
+
+        # Handle incomplete arrays
+        if isinstance(x, np.ndarray):
+            if x.size < self.n_dim:
+                temp = np.zeros(self.n_dim)
+                temp[: x.size] = x
+                x = temp
+            elif x.size > self.n_dim:
+                x = x[: self.n_dim]
+
+        # Now compute the gradient
+        coeffs = 2.0 / np.arange(1, self.n_dim + 1)
+        return coeffs * x
+
+    def d2f(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        # Handle scalar case
+        if isinstance(x, (int, float)):
+            return 2.0  # Second derivative for first dimension
+
+        # Handle different array sizes
+        if isinstance(x, np.ndarray) and x.size != self.n_dim:
+            if x.size < self.n_dim:
+                # Just return the Hessian for the dimensions we have
+                n = x.size
+                coeffs = 2.0 / np.arange(1, n + 1)
+                return np.diag(coeffs)
+            else:
+                # Truncate to our dimensions
+                x = x[: self.n_dim]
+
+        # Hessian is constant and diagonal
+        coeffs = 2.0 / np.arange(1, self.n_dim + 1)
+        return np.diag(coeffs)
+
+
 # Registry of functions
 FUNCTION_REGISTRY = {
     # Root-finding functions
@@ -527,6 +605,7 @@ FUNCTION_REGISTRY = {
     "quartic_min": QuarticMinFunction(),
     "rosenbrock": RosenbrockFunction(),
     "himmelblau": HimmelblauFunction(),
+    "diagonal_quadratic": DiagonalQuadraticFunction(),  # Add the new function here
 }
 
 # Create maps for backward compatibility

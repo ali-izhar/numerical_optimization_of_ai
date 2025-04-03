@@ -343,20 +343,15 @@ class BFGSMethod(BaseNumericalMethod):
 
         # BFGS update with safeguards
         if self.is_scalar:
-            # For scalar case, use simple formula
+            # For scalar case, H is a 1x1 matrix (scalar)
             sy = s * y
             if sy > 0:  # Only update if curvature condition is satisfied
-                # Handle scalar case directly
-                self.H = np.array(
-                    [
-                        [
-                            self.H[0, 0]
-                            + (y * y) / sy
-                            - (self.H[0, 0] * y * y * self.H[0, 0])
-                            / (y * self.H[0, 0] * y)
-                        ]
-                    ]
-                )
+                # Correct scalar BFGS update for inverse Hessian approx h: h_new = s^2 / (s*y)
+                self.H = np.array([[s * s / sy]])
+            # Optional: Add safeguard if H becomes non-positive or zero, though less common in scalar case
+            # elif sy <= 0 and abs(self.H[0, 0]) < 1e-10:
+            #     self.H = np.array([[1.0]]) # Reset to identity
+
         else:
             # Vector case
             sy = np.dot(s, y)

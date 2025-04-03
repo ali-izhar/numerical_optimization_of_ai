@@ -291,6 +291,12 @@ def run_methods(
             config.hessian = lambda x: np.array(
                 [[2 + 1200 * x[0] ** 2 - 400 * x[1], -400 * x[0]], [-400 * x[0], 200]]
             )
+    elif function_name == "diagonal_quadratic":
+        # Get the function object directly
+        func_obj = get_function(function_name)
+        # Use its df and d2f methods
+        config.derivative = func_obj.df
+        config.hessian = func_obj.d2f
 
     # Debug print statements
     print(f"Function type: {function_name}")

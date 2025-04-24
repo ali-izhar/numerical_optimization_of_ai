@@ -1,26 +1,14 @@
 #!/usr/bin/env python
-"""
-Automatic Differentiation Solver
-
-This script helps analyze functions using computational graphs and automatic differentiation.
-It can:
-1. Define intermediate variables in the computation
-2. Draw the computational graph
-3. Compute gradients using forward or reverse mode automatic differentiation
-4. Show the step-by-step process of gradient computation
-"""
+"""Automatic Differentiation Solver"""
 
 import numpy as np
-import torch
 import matplotlib.pyplot as plt
 import networkx as nx
 import sympy as sp
 from sympy.parsing.sympy_parser import parse_expr
-from sympy import symbols, diff, lambdify
 import re
-from typing import Dict, List, Tuple, Callable, Union, Optional
+from typing import Dict, List, Optional
 
-# Try to import graphviz
 HAS_GRAPHVIZ = False
 try:
     import graphviz
@@ -41,12 +29,21 @@ class Node:
         expr: Optional[sp.Expr] = None,
         value: Optional[float] = None,
     ):
+        """
+        Initialize a node in the computational graph.
+
+        Args:
+            name: The name of the node
+            operation: The operation this node performs
+            inputs: List of input node names
+            expr: Optional sympy expression
+            value: Optional pre-set value
+        """
         self.name = name
         self.operation = operation
         self.inputs = inputs
         self.expr = expr
         self.value = value
-        self.grad = None
         self.forward_grad = {}  # For forward mode: maps var_name -> gradient
         self.reverse_grad = None  # For reverse mode
 
@@ -684,8 +681,7 @@ class ComputationalGraph:
         return ax
 
     def get_gradient(self, input_values=None, mode="forward"):
-        """
-        Compute the gradient of the function with respect to all input variables.
+        """Compute the gradient of the function with respect to all input variables.
 
         Args:
             input_values: Dictionary mapping input variable names to values
@@ -844,8 +840,7 @@ class ComputationalGraph:
 
 
 def parse_function_and_build_graph(func_str, var_names=None):
-    """
-    Parse a function string and build a computational graph.
+    """Parse a function string and build a computational graph.
 
     Args:
         func_str: String representation of the function
@@ -955,11 +950,51 @@ def parse_function_and_build_graph(func_str, var_names=None):
     return graph, expr
 
 
+def get_interactive_inputs():
+    """Get function analysis parameters interactively from user input."""
+    print("Welcome to the Automatic Differentiation Solver!")
+    print(
+        "This tool helps analyze functions using computational graphs and automatic differentiation.\n"
+    )
+
+    func_str = input(
+        "Enter the function (e.g., 'sin(x*y) + exp(z)*cos(x) + x^2 + y^2 + z^2'): "
+    )
+    var_names = input(
+        "Enter the input variable names separated by spaces (e.g., 'x y z'): "
+    ).split()
+
+    values_str = input("Enter the values for each variable (e.g., '1.0 2.0 0.5'): ")
+    if values_str.strip():
+        values = list(map(float, values_str.split()))
+        input_values = {var: val for var, val in zip(var_names, values)}
+    else:
+        input_values = None
+
+    mode = input(
+        "Enter the mode of automatic differentiation (forward/reverse/both): "
+    ).lower()
+    if mode not in ["forward", "reverse", "both"]:
+        mode = "both"
+
+    viz = input("Enter the visualization method (micrograd/matplotlib): ").lower()
+    if viz not in ["micrograd", "matplotlib"]:
+        viz = "micrograd"
+
+    format = input("Enter the output format (png/svg/pdf): ").lower()
+    if format not in ["png", "svg", "pdf"]:
+        format = "png"
+
+    view = input("Open the visualization after generating? (y/n): ").lower() == "y"
+
+    return func_str, var_names, input_values, mode, viz, format, view
+
+
 def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Analyze functions using automatic differentiation."
+        description="Analyze functions using computational graphs and automatic differentiation."
     )
     parser.add_argument("--function", "-f", type=str, help="Function to analyze")
     parser.add_argument(
@@ -1000,40 +1035,9 @@ def main():
 
     # Interactive mode if no function is provided
     if args.function is None:
-        print("Welcome to the Automatic Differentiation Solver!")
-        print(
-            "This tool helps analyze functions using computational graphs and automatic differentiation.\n"
+        func_str, var_names, input_values, mode, viz, format, view = (
+            get_interactive_inputs()
         )
-
-        func_str = input(
-            "Enter the function (e.g., 'sin(x*y) + exp(z)*cos(x) + x^2 + y^2 + z^2'): "
-        )
-        var_names = input(
-            "Enter the input variable names separated by spaces (e.g., 'x y z'): "
-        ).split()
-
-        values_str = input("Enter the values for each variable (e.g., '1.0 2.0 0.5'): ")
-        if values_str.strip():
-            values = list(map(float, values_str.split()))
-            input_values = {var: val for var, val in zip(var_names, values)}
-        else:
-            input_values = None
-
-        mode = input(
-            "Enter the mode of automatic differentiation (forward/reverse/both): "
-        ).lower()
-        if mode not in ["forward", "reverse", "both"]:
-            mode = "both"
-
-        viz = input("Enter the visualization method (micrograd/matplotlib): ").lower()
-        if viz not in ["micrograd", "matplotlib"]:
-            viz = "micrograd"
-
-        format = input("Enter the output format (png/svg/pdf): ").lower()
-        if format not in ["png", "svg", "pdf"]:
-            format = "png"
-
-        view = input("Open the visualization after generating? (y/n): ").lower() == "y"
     else:
         func_str = args.function
         var_names = args.variables
@@ -1048,6 +1052,12 @@ def main():
         format = args.format
         view = args.view
 
+    # Process the function and compute gradients
+    process_and_visualize(func_str, var_names, input_values, mode, viz, format, view)
+
+
+def process_and_visualize(func_str, var_names, input_values, mode, viz, format, view):
+    """Process the function, compute gradients, and visualize the results."""
     # Parse the function and build the computational graph
     graph, expr = parse_function_and_build_graph(func_str, var_names)
 

@@ -20,6 +20,15 @@ from sympy import symbols, diff, lambdify
 import re
 from typing import Dict, List, Tuple, Callable, Union, Optional
 
+# Try to import graphviz
+HAS_GRAPHVIZ = False
+try:
+    import graphviz
+
+    HAS_GRAPHVIZ = True
+except ImportError:
+    pass
+
 
 class Node:
     """Represents a node in the computational graph."""
@@ -503,53 +512,83 @@ class ComputationalGraph:
         gradients = {name: self.nodes[name].reverse_grad for name in self.input_nodes}
         return gradients, steps
 
-    def draw_graph(self, ax=None, figsize=(10, 8)):
-        """Draw the computational graph using a simple layout algorithm."""
+    def draw_graph(self, ax=None, figsize=(12, 10)):
+        """Draw the computational graph in a professional style with rectangular boxes for values."""
         if ax is None:
             fig, ax = plt.subplots(figsize=figsize)
 
+        # Create a directed graph
         G = nx.DiGraph()
 
-        # Add nodes
+        # Define node types
+        input_nodes = self.input_nodes
+        output_node = self.output_node
+        operation_nodes = []
+        value_nodes = []
+
+        # Classify nodes into operations and values
         for name, node in self.nodes.items():
-            if name in self.input_nodes:
-                node_color = "lightblue"
-                node_type = "input"
-            elif name == self.output_node:
-                node_color = "lightgreen"
-                node_type = "output"
+            if node.operation not in ["input"]:
+                operation_nodes.append(name)
             else:
-                node_color = "lightgray"
-                node_type = "intermediate"
+                value_nodes.append(name)
 
-            label = f"{name}\n{node.operation}"
-            if node.value is not None:
-                label += f"\n{node.value:.4f}"
+        # Add output node to value nodes if not already there
+        if output_node not in value_nodes:
+            value_nodes.append(output_node)
 
-            G.add_node(name, color=node_color, label=label, type=node_type)
+        # Add nodes to the graph with appropriate attributes
+        for name in operation_nodes:
+            node = self.nodes[name]
+            # Operations are circular
+            G.add_node(
+                name,
+                type="operation",
+                label=node.operation,
+                width=0.6,
+                height=0.6,
+                shape="circle",
+            )
+
+        for name in value_nodes:
+            node = self.nodes[name]
+            # Values are rectangular
+            label = f"Value({node.value:.2f})" if node.value is not None else name
+            G.add_node(
+                name,
+                type="value",
+                label=label,
+                width=1.2,
+                height=0.8,
+                shape="rectangle",
+            )
 
         # Add edges
         for name, node in self.nodes.items():
             for input_name in node.inputs:
                 G.add_edge(input_name, name)
 
-        # Compute a hierarchical layout manually
+        # Compute a hierarchical layout
         # Group nodes by their level in the graph
         node_levels = {}
-        for node_name in self.input_nodes:
+        for node_name in input_nodes:
             node_levels[node_name] = 0
 
         # Assign levels to nodes based on their dependencies
         for name in self.evaluation_order:
-            if name in self.input_nodes:
+            if name in input_nodes:
                 continue
 
             # Level is one more than the maximum level of inputs
-            max_input_level = max(
-                [
-                    node_levels.get(input_name, 0)
-                    for input_name in self.nodes[name].inputs
-                ]
+            max_input_level = (
+                max(
+                    [
+                        node_levels.get(input_name, 0)
+                        for input_name in self.nodes[name].inputs
+                    ]
+                )
+                if self.nodes[name].inputs
+                else 0
             )
             node_levels[name] = max_input_level + 1
 
@@ -562,7 +601,7 @@ class ComputationalGraph:
 
         # Assign positions based on levels
         pos = {}
-        max_level = max(levels.keys())
+        max_level = max(levels.keys()) if levels else 0
         for level, nodes in levels.items():
             # Sort nodes within each level
             nodes.sort()
@@ -577,23 +616,70 @@ class ComputationalGraph:
                 x = (i + 1) / (num_nodes + 1) if num_nodes > 1 else 0.5
                 pos[node] = (x, y)
 
-        # Draw nodes
-        node_colors = [G.nodes[node].get("color", "lightgray") for node in G.nodes()]
+        # Draw different node types with appropriate shapes
+        # Draw value nodes (rectangles)
+        value_nodes_list = [n for n in G.nodes() if G.nodes[n].get("type") == "value"]
+        value_node_colors = [
+            (
+                "lightblue"
+                if n in input_nodes
+                else "lightgreen" if n == output_node else "lightgray"
+            )
+            for n in value_nodes_list
+        ]
+
+        # Draw rectangles for value nodes
+        for i, node in enumerate(value_nodes_list):
+            rect = plt.Rectangle(
+                (
+                    pos[node][0] - G.nodes[node].get("width", 0.5) / 2,
+                    pos[node][1] - G.nodes[node].get("height", 0.3) / 2,
+                ),
+                G.nodes[node].get("width", 1.0),
+                G.nodes[node].get("height", 0.6),
+                facecolor=value_node_colors[i],
+                edgecolor="black",
+                alpha=0.8,
+                zorder=1,
+            )
+            ax.add_patch(rect)
+
+        # Draw operation nodes (circles)
+        op_nodes_list = [n for n in G.nodes() if G.nodes[n].get("type") == "operation"]
         nx.draw_networkx_nodes(
-            G, pos, node_color=node_colors, node_size=2500, alpha=0.8, ax=ax
+            G,
+            pos,
+            nodelist=op_nodes_list,
+            node_shape="o",
+            node_color="white",
+            edgecolors="black",
+            node_size=1800,
+            alpha=0.8,
+            ax=ax,
         )
 
         # Draw edges
         nx.draw_networkx_edges(
-            G, pos, edge_color="gray", width=1.0, arrowsize=20, ax=ax
+            G, pos, width=1.5, edge_color="gray", arrowsize=20, arrowstyle="-|>", ax=ax
         )
 
-        # Draw labels
-        labels = {node: G.nodes[node].get("label", node) for node in G.nodes()}
-        nx.draw_networkx_labels(G, pos, labels=labels, font_size=10, ax=ax)
+        # Draw labels for value nodes
+        value_labels = {n: G.nodes[n].get("label", n) for n in value_nodes_list}
+        nx.draw_networkx_labels(
+            G, pos, labels=value_labels, font_size=10, font_weight="bold", ax=ax
+        )
 
-        ax.set_title("Computational Graph")
+        # Draw labels for operation nodes
+        op_labels = {n: G.nodes[n].get("label", n) for n in op_nodes_list}
+        nx.draw_networkx_labels(
+            G, pos, labels=op_labels, font_size=12, font_weight="bold", ax=ax
+        )
+
+        ax.set_title("Computational Graph", fontsize=16, fontweight="bold")
         ax.axis("off")
+
+        # Set margins to make graph fit better
+        plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05)
 
         return ax
 
@@ -627,6 +713,134 @@ class ComputationalGraph:
             return gradients, all_steps
         else:
             raise ValueError(f"Unsupported mode: {mode}")
+
+    def draw_graph_micrograd(
+        self, filename="computational_graph", format="png", rankdir="TB", view=False
+    ):
+        """
+        Draw the computational graph using graphviz in a style similar to micrograd.
+
+        Args:
+            filename: Name of the output file
+            format: Format of the output file (png, svg, pdf)
+            rankdir: Direction of the graph layout (TB = top-bottom, LR = left-right)
+            view: Whether to open the rendered graph
+        """
+        if not HAS_GRAPHVIZ:
+            raise ImportError(
+                "Graphviz is not available. Install with 'pip install graphviz'"
+            )
+
+        # Create a new directed graph
+        dot = graphviz.Digraph(format=format, graph_attr={"rankdir": rankdir})
+
+        # First, determine which mode was used based on available data
+        mode = "unknown"
+        if any(
+            hasattr(node, "reverse_grad") and node.reverse_grad is not None
+            for _, node in self.nodes.items()
+        ):
+            mode = "reverse"
+        elif any(
+            hasattr(node, "forward_grad") and node.forward_grad
+            for _, node in self.nodes.items()
+        ):
+            mode = "forward"
+
+        # For forward mode, collect gradients with respect to the output
+        output_gradients = {}
+        if mode == "forward" and self.output_node:
+            # Find gradients of output with respect to each input
+            for var_name in self.input_nodes:
+                for node_name, node in self.nodes.items():
+                    if hasattr(node, "forward_grad") and var_name in node.forward_grad:
+                        if node_name == self.output_node:
+                            output_gradients[var_name] = node.forward_grad[var_name]
+
+        # Add nodes to the graph
+        for name, node in self.nodes.items():
+            # Format the value to a reasonable precision
+            if isinstance(node.value, (int, float)):
+                value_str = f"{node.value:.4f}"
+            else:
+                value_str = str(node.value)
+
+            # Get gradient value based on the AD mode that was used
+            grad_str = "?"
+
+            # For reverse mode, use reverse_grad
+            if (
+                mode == "reverse"
+                and hasattr(node, "reverse_grad")
+                and node.reverse_grad is not None
+            ):
+                grad_str = f"{node.reverse_grad:.4f}"
+
+            # For forward mode
+            elif mode == "forward":
+                # Output node has gradient 1.0 by definition
+                if name == self.output_node:
+                    grad_str = "1.0000"
+                # For input nodes, show the output gradient with respect to this input
+                elif name in self.input_nodes and name in output_gradients:
+                    grad_str = f"{output_gradients[name]:.4f}"
+                # For intermediate nodes in forward mode, we need to show last accumulated gradient
+                elif hasattr(node, "forward_grad") and node.forward_grad:
+                    # Try to get the most relevant gradient for this node
+                    # (the gradient of output with respect to this node's contribution)
+                    if self.output_node and name in node.forward_grad:
+                        grad_str = f"{node.forward_grad[name]:.4f}"
+                    else:
+                        # Show the appropriate derivative based on context
+                        # For operations involving input variables, show those gradients
+                        relevant_grads = []
+                        for var_name in self.input_nodes:
+                            if (
+                                var_name in node.forward_grad
+                                and abs(node.forward_grad[var_name]) > 1e-10
+                            ):
+                                relevant_grads.append(
+                                    f"{node.forward_grad[var_name]:.4f}"
+                                )
+
+                        if relevant_grads:
+                            grad_str = relevant_grads[
+                                0
+                            ]  # Just show the first relevant gradient
+
+            # Create the node label
+            if name in self.input_nodes:
+                label = f"{{{name}|data: {value_str}|grad: {grad_str}}}"
+                node_color = "lightblue"
+            elif name == self.output_node:
+                label = f"{{{name}|data: {value_str}|grad: {grad_str}}}"
+                node_color = "lightgreen"
+            else:
+                label = f"{{{name}|op: {node.operation}|data: {value_str}|grad: {grad_str}}}"
+                node_color = "lightgrey"
+
+            # Add the node to the graph
+            dot.node(
+                name, label=label, shape="record", style="filled", fillcolor=node_color
+            )
+
+        # Add edges to the graph
+        for name, node in self.nodes.items():
+            if not hasattr(node, "inputs"):
+                continue
+
+            for input_name in node.inputs:
+                dot.edge(input_name, name)
+
+        # Render the graph
+        try:
+            dot.render(filename, view=view, cleanup=True)
+            print(f"\nComputational graph saved as '{filename}.{format}'")
+            if view:
+                print(f"The graph should open automatically in your default viewer")
+        except Exception as e:
+            print(f"Error rendering graph: {e}")
+            print("Make sure the graphviz executable is installed on your system")
 
 
 def parse_function_and_build_graph(func_str, var_names=None):
@@ -762,6 +976,25 @@ def main():
         choices=["forward", "reverse", "both"],
         help="Mode of automatic differentiation",
     )
+    parser.add_argument(
+        "--viz",
+        type=str,
+        default="micrograd",
+        choices=["micrograd", "matplotlib"],
+        help="Visualization method to use",
+    )
+    parser.add_argument(
+        "--format",
+        type=str,
+        default="png",
+        choices=["png", "svg", "pdf"],
+        help="Output format for the graph visualization",
+    )
+    parser.add_argument(
+        "--view",
+        action="store_true",
+        help="Open the visualization after generating",
+    )
 
     args = parser.parse_args()
 
@@ -791,6 +1024,16 @@ def main():
         ).lower()
         if mode not in ["forward", "reverse", "both"]:
             mode = "both"
+
+        viz = input("Enter the visualization method (micrograd/matplotlib): ").lower()
+        if viz not in ["micrograd", "matplotlib"]:
+            viz = "micrograd"
+
+        format = input("Enter the output format (png/svg/pdf): ").lower()
+        if format not in ["png", "svg", "pdf"]:
+            format = "png"
+
+        view = input("Open the visualization after generating? (y/n): ").lower() == "y"
     else:
         func_str = args.function
         var_names = args.variables
@@ -801,6 +1044,9 @@ def main():
             input_values = None
 
         mode = args.mode
+        viz = args.viz
+        format = args.format
+        view = args.view
 
     # Parse the function and build the computational graph
     graph, expr = parse_function_and_build_graph(func_str, var_names)
@@ -826,13 +1072,7 @@ def main():
         else:
             print(f"{name} = {node.operation}({', '.join(node.inputs)}): {node.value}")
 
-    # Draw the computational graph
-    plt.figure(figsize=(12, 10))
-    graph.draw_graph()
-    plt.savefig("computational_graph.png", bbox_inches="tight")
-    print("\nComputational graph saved as 'computational_graph.png'")
-
-    # Compute gradients
+    # Compute gradients before visualization so they appear in the graph
     if mode in ["forward", "both"]:
         gradients, steps = graph.get_gradient(input_values, mode="forward")
         print("\nForward mode automatic differentiation:")
@@ -845,9 +1085,32 @@ def main():
         print("Gradients:", gradients)
         print("Steps:", "\n".join(steps))
 
-    # Show the plot
-    plt.tight_layout()
-    plt.show()
+    # Draw the computational graph
+    filename = "computational_graph"
+    if viz == "micrograd" and HAS_GRAPHVIZ:
+        # Try to use graphviz visualization
+        graph.draw_graph_micrograd(filename=filename, format=format, view=view)
+    else:
+        # Fall back to matplotlib visualization
+        if viz == "micrograd" and not HAS_GRAPHVIZ:
+            print(
+                "\nWarning: graphviz not available, falling back to matplotlib visualization."
+            )
+            print("To use graphviz visualization, install graphviz:")
+            print("  pip install graphviz")
+            print(
+                "  And also the system package: brew install graphviz (Mac) or apt-get install graphviz (Linux)"
+            )
+
+        plt.figure(figsize=(12, 10))
+        graph.draw_graph()
+        plt.savefig(f"{filename}.{format}", bbox_inches="tight")
+        print(f"\nComputational graph saved as '{filename}.{format}'")
+
+        if view:
+            plt.show()
+        else:
+            plt.close()
 
 
 if __name__ == "__main__":

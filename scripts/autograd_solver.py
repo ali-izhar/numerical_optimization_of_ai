@@ -711,7 +711,13 @@ class ComputationalGraph:
             raise ValueError(f"Unsupported mode: {mode}")
 
     def draw_graph_micrograd(
-        self, filename="computational_graph", format="png", rankdir="TB", view=False
+        self,
+        filename="computational_graph",
+        format="png",
+        rankdir="TB",
+        view=False,
+        ad_mode="forward",
+        seed_var=None,
     ):
         """
         Draw the computational graph using graphviz in a style similar to micrograd.
@@ -721,6 +727,8 @@ class ComputationalGraph:
             format: Format of the output file (png, svg, pdf)
             rankdir: Direction of the graph layout (TB = top-bottom, LR = left-right)
             view: Whether to open the rendered graph
+            ad_mode: Mode of automatic differentiation to visualize ("forward" or "reverse")
+            seed_var: For forward mode, which seed variable to show (if None, uses first input)
         """
         if not HAS_GRAPHVIZ:
             raise ImportError(
@@ -730,28 +738,34 @@ class ComputationalGraph:
         # Create a new directed graph
         dot = graphviz.Digraph(format=format, graph_attr={"rankdir": rankdir})
 
-        # First, determine which mode was used based on available data
-        mode = "unknown"
-        if any(
+        # Determine the AD mode to visualize
+        if ad_mode not in ["forward", "reverse"]:
+            print(f"Warning: Unknown AD mode '{ad_mode}', defaulting to forward mode")
+            ad_mode = "forward"
+
+        # For forward mode, ensure we have a seed variable
+        if ad_mode == "forward":
+            if seed_var is None and self.input_nodes:
+                seed_var = self.input_nodes[0]
+                print(
+                    f"Using first input node '{seed_var}' as seed variable for forward mode visualization"
+                )
+            elif seed_var not in self.input_nodes:
+                if self.input_nodes:
+                    seed_var = self.input_nodes[0]
+                    print(f"Invalid seed variable, using '{seed_var}' instead")
+                else:
+                    print("No input nodes available for forward mode visualization")
+                    seed_var = None
+
+        # For reverse mode, ensure we have computed reverse gradients
+        if ad_mode == "reverse" and not any(
             hasattr(node, "reverse_grad") and node.reverse_grad is not None
             for _, node in self.nodes.items()
         ):
-            mode = "reverse"
-        elif any(
-            hasattr(node, "forward_grad") and node.forward_grad
-            for _, node in self.nodes.items()
-        ):
-            mode = "forward"
-
-        # For forward mode, collect gradients with respect to the output
-        output_gradients = {}
-        if mode == "forward" and self.output_node:
-            # Find gradients of output with respect to each input
-            for var_name in self.input_nodes:
-                for node_name, node in self.nodes.items():
-                    if hasattr(node, "forward_grad") and var_name in node.forward_grad:
-                        if node_name == self.output_node:
-                            output_gradients[var_name] = node.forward_grad[var_name]
+            print(
+                "Warning: No reverse mode gradients found. Run reverse_mode_ad() first."
+            )
 
         # Add nodes to the graph
         for name, node in self.nodes.items():
@@ -761,58 +775,36 @@ class ComputationalGraph:
             else:
                 value_str = str(node.value)
 
-            # Get gradient value based on the AD mode that was used
-            grad_str = "?"
-
-            # For reverse mode, use reverse_grad
-            if (
-                mode == "reverse"
-                and hasattr(node, "reverse_grad")
-                and node.reverse_grad is not None
-            ):
-                grad_str = f"{node.reverse_grad:.4f}"
-
-            # For forward mode
-            elif mode == "forward":
-                # Output node has gradient 1.0 by definition
-                if name == self.output_node:
-                    grad_str = "1.0000"
-                # For input nodes, show the output gradient with respect to this input
-                elif name in self.input_nodes and name in output_gradients:
-                    grad_str = f"{output_gradients[name]:.4f}"
-                # For intermediate nodes in forward mode, we need to show last accumulated gradient
-                elif hasattr(node, "forward_grad") and node.forward_grad:
-                    # Try to get the most relevant gradient for this node
-                    # (the gradient of output with respect to this node's contribution)
-                    if self.output_node and name in node.forward_grad:
-                        grad_str = f"{node.forward_grad[name]:.4f}"
-                    else:
-                        # Show the appropriate derivative based on context
-                        # For operations involving input variables, show those gradients
-                        relevant_grads = []
-                        for var_name in self.input_nodes:
-                            if (
-                                var_name in node.forward_grad
-                                and abs(node.forward_grad[var_name]) > 1e-10
-                            ):
-                                relevant_grads.append(
-                                    f"{node.forward_grad[var_name]:.4f}"
-                                )
-
-                        if relevant_grads:
-                            grad_str = relevant_grads[
-                                0
-                            ]  # Just show the first relevant gradient
+            # Get gradient value based on AD mode
+            if ad_mode == "forward" and seed_var is not None:
+                # For forward mode, show the dual number (derivative with respect to seed)
+                if hasattr(node, "forward_grad") and seed_var in node.forward_grad:
+                    grad_str = f"{node.forward_grad[seed_var]:.4f}"
+                    label_str = "dual"  # Use "dual" for forward mode
+                else:
+                    grad_str = "0.0000"  # Default to zero if not computed
+                    label_str = "dual"
+            elif ad_mode == "reverse":
+                # For reverse mode, show the adjoint (∂f/∂node)
+                if hasattr(node, "reverse_grad") and node.reverse_grad is not None:
+                    grad_str = f"{node.reverse_grad:.4f}"
+                    label_str = "adj"  # Use "adj" for reverse mode
+                else:
+                    grad_str = "?"
+                    label_str = "adj"
+            else:
+                grad_str = "?"
+                label_str = "grad"
 
             # Create the node label
             if name in self.input_nodes:
-                label = f"{{{name}|data: {value_str}|grad: {grad_str}}}"
+                label = f"{{{name}|data: {value_str}|{label_str}: {grad_str}}}"
                 node_color = "lightblue"
             elif name == self.output_node:
-                label = f"{{{name}|data: {value_str}|grad: {grad_str}}}"
+                label = f"{{{name}|data: {value_str}|{label_str}: {grad_str}}}"
                 node_color = "lightgreen"
             else:
-                label = f"{{{name}|op: {node.operation}|data: {value_str}|grad: {grad_str}}}"
+                label = f"{{{name}|op: {node.operation}|data: {value_str}|{label_str}: {grad_str}}}"
                 node_color = "lightgrey"
 
             # Add the node to the graph
@@ -827,6 +819,17 @@ class ComputationalGraph:
 
             for input_name in node.inputs:
                 dot.edge(input_name, name)
+
+        # Add a note about which mode and seed is being shown
+        if ad_mode == "forward" and seed_var is not None:
+            title = f"Forward Mode AD (seed: {seed_var})"
+        elif ad_mode == "reverse":
+            title = "Reverse Mode AD"
+        else:
+            title = "Computational Graph"
+
+        # Add a title to the graph
+        dot.attr(label=title, labelloc="t", fontsize="20")
 
         # Render the graph
         try:
@@ -987,7 +990,30 @@ def get_interactive_inputs():
 
     view = input("Open the visualization after generating? (y/n): ").lower() == "y"
 
-    return func_str, var_names, input_values, mode, viz, format, view
+    viz_mode = input("Visualization AD mode (forward/reverse): ").lower()
+    if viz_mode not in ["forward", "reverse"]:
+        viz_mode = "forward"
+
+    seed_var = None
+    if viz_mode == "forward" and var_names:
+        seed_choice = input(f"Choose seed variable for visualization {var_names}: ")
+        if seed_choice in var_names:
+            seed_var = seed_choice
+        else:
+            seed_var = var_names[0]
+            print(f"Invalid choice, using {seed_var} as seed variable")
+
+    return (
+        func_str,
+        var_names,
+        input_values,
+        mode,
+        viz,
+        format,
+        view,
+        viz_mode,
+        seed_var,
+    )
 
 
 def main():
@@ -1030,14 +1056,34 @@ def main():
         action="store_true",
         help="Open the visualization after generating",
     )
+    parser.add_argument(
+        "--viz-mode",
+        type=str,
+        default="forward",
+        choices=["forward", "reverse"],
+        help="AD mode to display in visualization",
+    )
+    parser.add_argument(
+        "--seed-var",
+        type=str,
+        help="Seed variable for forward mode visualization",
+    )
 
     args = parser.parse_args()
 
     # Interactive mode if no function is provided
     if args.function is None:
-        func_str, var_names, input_values, mode, viz, format, view = (
-            get_interactive_inputs()
-        )
+        (
+            func_str,
+            var_names,
+            input_values,
+            mode,
+            viz,
+            format,
+            view,
+            viz_mode,
+            seed_var,
+        ) = get_interactive_inputs()
     else:
         func_str = args.function
         var_names = args.variables
@@ -1051,12 +1097,26 @@ def main():
         viz = args.viz
         format = args.format
         view = args.view
+        viz_mode = args.viz_mode
+        seed_var = args.seed_var
 
     # Process the function and compute gradients
-    process_and_visualize(func_str, var_names, input_values, mode, viz, format, view)
+    process_and_visualize(
+        func_str, var_names, input_values, mode, viz, format, view, viz_mode, seed_var
+    )
 
 
-def process_and_visualize(func_str, var_names, input_values, mode, viz, format, view):
+def process_and_visualize(
+    func_str,
+    var_names,
+    input_values,
+    mode,
+    viz,
+    format,
+    view,
+    viz_mode="forward",
+    seed_var=None,
+):
     """Process the function, compute gradients, and visualize the results."""
     # Parse the function and build the computational graph
     graph, expr = parse_function_and_build_graph(func_str, var_names)
@@ -1099,7 +1159,13 @@ def process_and_visualize(func_str, var_names, input_values, mode, viz, format, 
     filename = "computational_graph"
     if viz == "micrograd" and HAS_GRAPHVIZ:
         # Try to use graphviz visualization
-        graph.draw_graph_micrograd(filename=filename, format=format, view=view)
+        graph.draw_graph_micrograd(
+            filename=filename,
+            format=format,
+            view=view,
+            ad_mode=viz_mode,
+            seed_var=seed_var,
+        )
     else:
         # Fall back to matplotlib visualization
         if viz == "micrograd" and not HAS_GRAPHVIZ:

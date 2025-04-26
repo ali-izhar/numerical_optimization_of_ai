@@ -1132,6 +1132,11 @@ def process_and_visualize(
         print(f"Using default values {input_values}")
         print(f"Function value: {output_value}")
 
+    # Add note about radians
+    print(
+        "\nNote: All trigonometric functions (sin, cos, tan, etc.) use RADIANS, not degrees."
+    )
+
     # Print intermediate variables
     print("\nIntermediate variables:")
     for name, node in graph.nodes.items():
@@ -1143,17 +1148,22 @@ def process_and_visualize(
             print(f"{name} = {node.operation}({', '.join(node.inputs)}): {node.value}")
 
     # Compute gradients before visualization so they appear in the graph
+    forward_gradients = None
+    reverse_gradients = None
+
     if mode in ["forward", "both"]:
-        gradients, steps = graph.get_gradient(input_values, mode="forward")
+        forward_gradients, steps = graph.get_gradient(input_values, mode="forward")
         print("\nForward mode automatic differentiation:")
-        print("Gradients:", gradients)
+        print("Gradients:", forward_gradients)
         print("Steps:", "\n".join(steps))
 
-    if mode in ["reverse", "both"]:
-        gradients, steps = graph.get_gradient(input_values, mode="reverse")
-        print("\nReverse mode automatic differentiation:")
-        print("Gradients:", gradients)
-        print("Steps:", "\n".join(steps))
+    if mode in ["reverse", "both"] or viz_mode == "reverse":
+        # Always compute reverse gradients if we need to visualize them
+        reverse_gradients, steps = graph.get_gradient(input_values, mode="reverse")
+        if mode in ["reverse", "both"]:
+            print("\nReverse mode automatic differentiation:")
+            print("Gradients:", reverse_gradients)
+            print("Steps:", "\n".join(steps))
 
     # Draw the computational graph
     filename = "computational_graph"
@@ -1191,3 +1201,7 @@ def process_and_visualize(
 
 if __name__ == "__main__":
     main()
+
+
+# python autograd_solver.py -f "(x_2*x_3 + log(x_1))/exp(x_3)" -v x_1 x_2 x_3 -val 2.0 3.0 1.0 -m forward --viz-mode forward --seed-var x_3
+# python autograd_solver.py -f "(x_2*x_3 + log(x_1))/exp(x_3)" -v x_1 x_2 x_3 -val 2.0 3.0 1.0 -m both --viz-mode reverse
